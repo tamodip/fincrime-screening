@@ -98,6 +98,48 @@ def find_dates(text):
     return out
 
 
+SLASH_RE = re.compile(r"(?<![\d/.])(\d{1,2})[/.](\d{1,2})[/.](\d{4})(?![\d/])")
+
+
+def find_provider_dates(text):
+    """Dates inside watchlist profiles, written as the provider wrote them: a slash date whose
+    order cannot be told apart (both parts <= 12 and different) keeps only its year."""
+    out = []
+    for s, e, d in find_dates(text):
+        out.append((s, e, d))
+    fixed = []
+    for s, e, d in out:
+        m = SLASH_RE.match(text, s) if s < len(text) else None
+        if m and m.end() == e:
+            a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if a > 12 and b <= 12:
+                d = (y, b, a)
+            elif b > 12 and a <= 12:
+                d = (y, a, b)
+            elif a == b:
+                d = (y, a, b)
+            else:
+                d = (y, None, None)
+        fixed.append((s, e, d))
+    # m/d/yyyy with month > 12 is rejected by find_dates; recover it
+    for m in SLASH_RE.finditer(text):
+        if any(s <= m.start() < e for s, e, _ in fixed):
+            continue
+        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if b > 12 and a <= 12 and 1 <= b <= 31:
+            fixed.append((m.start(), m.end(), (y, a, b)))
+    # drop bare-year matches that sit inside a recovered slash date
+    fixed.sort()
+    clean = []
+    for s, e, d in fixed:
+        if clean and s < clean[-1][1]:
+            if (e - s) > (clean[-1][1] - clean[-1][0]):
+                clean[-1] = (s, e, d)
+            continue
+        clean.append((s, e, d))
+    return clean
+
+
 def parse_date(value):
     if not value or not isinstance(value, str):
         return None
@@ -611,9 +653,20 @@ def hit_countries(h):
 
 AGE_PATTERNS = [
     r"\baged\s+(\d{1,3})\b", r"\b(\d{1,3})[- ]years?[- ]old\b", r"\bage\s+of\s+(\d{1,3})\b", r"\bat\s+age\s+(\d{1,3})\b",
-    r"\b(\d{1,3})\s+years?\s+of\s+age\b", r"\bage[d]?\s*[:=]?\s*(\d{1,3})\b", r"\b(?:was|is|turned|reached)\s+(\d{1,3})\b(?!\s*(?:%|percent|million|billion|thousand|people|times|counts?|years in|months|days))",
-    r"\bat\s+(\d{1,3}),", r",\s*(\d{1,3}),", r"^\s*(\d{1,3}),",
+    r"\b(\d{1,3})\s+years?\s+of\s+age\b", r"\bage\s+(\d{1,3})\b", r"\b(?:was|is|turned|reached)\s+(\d{1,3})\b(?!\s*(?:%|percent|million|billion|thousand|people|times|counts?|years in|months|days))",
+    r"\bat\s+(\d{1,3}),", r",\s*(\d{1,3}),", r"^\s*(\d{1,3}),", r"\bthen\s+(\d{1,3})\b", r"\ba\s+(\d{1,3})\s*,",
+    r"\bat\s+(\d{1,3})\s*[.;]", r",\s*(\d{1,3})\s+and\b", r",\s*(\d{1,3})\s*\.\s",
 ]
+
+
+def extract_age_loose(stripped):
+    """Search snippets only: if exactly one standalone 1-3 digit number remains (dates removed), it is the age."""
+    ages = extract_age(stripped)
+    if ages:
+        return ages
+    nums = {int(x) for x in re.findall(r"(?<![\w.,/-])(\d{1,3})(?![\w/%-]|[.,]\d)", stripped)}
+    nums = {n for n in nums if 10 <= n <= 110}
+    return nums if len(nums) == 1 else set()
 
 
 def extract_age(sentence):
@@ -649,9 +702,11 @@ def hit_dobs_from_notes(h):
     for sent in re.split(r"(?<=[.!?])\s+(?=[A-Z])", fp):
         if re.match(r"\s*According to", sent):
             continue
-        m = re.search(r"\bborn\b[^.]*", sent, re.I)
+        # only narrative birth statements count; raw provider fields such as "DOB: 6/20/1955" inside
+        # scraped profile text are not treated as the hit's date of birth (policy principle 5)
+        m = re.search(r"\bborn\b[^.;]{0,40}", sent, re.I)
         if m and not re.search(r"\bborn\s+(?:out|again|into)\b", sent, re.I):
-            ds = find_dates(m.group(0))
+            ds = find_provider_dates(m.group(0))
             if ds:
                 out.append(("born", ds[0][2], sent.strip()))
                 continue
@@ -754,7 +809,7 @@ def parse_dob_field(v):
     m = re.fullmatch(r"\s*(?:c\.|ca\.|circa|approx\.?|about)?\s*(\d{4})\s*(?:-|–|to|/)\s*(\d{4})\s*", v, re.I)
     if m and int(m.group(1)) < int(m.group(2)) <= int(m.group(1)) + 15:
         return [(y, None, None) for y in range(int(m.group(1)), int(m.group(2)) + 1)]
-    return [d for _, _, d in find_dates(v)]
+    return [d for _, _, d in find_provider_dates(v)]
 
 
 class HitFacts:
@@ -786,7 +841,8 @@ class HitFacts:
                     self.dob_ev = sorted({sid for _, sid in sr})
                     self.dob_kind = "search"
         self.reports = report_dates(h)
-        self.deceased = parse_date(h.get("deceased_date")) if isinstance(h.get("deceased_date"), str) else None
+        _dd = find_provider_dates(h.get("deceased_date")) if isinstance(h.get("deceased_date"), str) else []
+        self.deceased = _dd[0][2] if _dd else None
         if not self.deceased and not self.company:
             m = re.search(r"\b(?:died|passed away|date of death|deceased)\b(?:\s+(?:on|in|:))?\s*:?\s*(" + MON_RE + r"\s+\d{1,2},\s+\d{4}|\d{1,2}\s+" + MON_RE + r"\s+\d{4}|\d{4}-\d{2}-\d{2}|" + MON_RE + r"\s+\d{4})",
                           h.get("profile_notes") or "", re.I)
@@ -820,7 +876,7 @@ class HitFacts:
                 stripped = snip
                 for a, b, d in sorted(ds, reverse=True):
                     stripped = stripped[:a] + " DATE " + stripped[b:]
-                ages = extract_age(stripped)
+                ages = extract_age_loose(stripped)
                 if len(ages) != 1:
                     continue
                 age = ages.pop()

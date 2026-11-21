@@ -88,6 +88,10 @@ ISO-2 codes, demonyms and territories → one canonical name).
   same name parts, whose snippet contains the listing phrase of the hit's primary/first
   category (*"a politically exposed person"* …) **and** a country tied to the hit, with
   exactly one age and one date in the snippet. Every other namesake result is ignored.
+  Only narrative statements in the notes count (*born …*, *aged N …*); raw scraped
+  key–value fields such as `DOB: 6/20/1955` or `Age: 38` are not used as the hit's DOB.
+* **Provider dates** keep only what is certain: a slash date whose day/month order cannot be
+  told apart (e.g. `05/06/1970`) keeps just its year; `6/20/1955` is read as 20 June.
 * **Earliest dated report:** only lines of the form `According to …; Month D, YYYY:`.
 * **Death date:** `deceased_date` (or an explicit *died on DATE* in the notes).
 
@@ -149,6 +153,15 @@ CUS-293016 → KYC-16E55D verifies TIJJANI ABDLULAHI (DOB 1984-07-10, Nigeria). 
 and no attributable search result. Names agree (Abdlulahi ≈ Abdullahi within 2 edits),
 countries agree, nothing contradicts, but without a hit DOB the hit can be neither cleared
 nor confirmed. Evidence: `["CUS-293016", "KYC-16E55D"]`.
+
+## Robustness testing
+
+Besides the practice labels, we re-ran the system on a perturbed copy of `dev/` in which
+every KYC note was rewritten with new templates (four sentence shapes, five date formats,
+30% of names in Title case instead of capitals) and profile-note age phrases were reworded.
+All 819 decisions stayed identical. Earlier iterations of this test exposed bugs that would
+have caused unsafe clearances (a check date read as the birth date; "United States" read as a
+person's name); both are fixed and guarded.
 
 ## Honest limitations
 
