@@ -843,11 +843,6 @@ class HitFacts:
         self.reports = report_dates(h)
         _dd = find_provider_dates(h.get("deceased_date")) if isinstance(h.get("deceased_date"), str) else []
         self.deceased = _dd[0][2] if _dd else None
-        if not self.deceased and not self.company:
-            m = re.search(r"\b(?:died|passed away|date of death|deceased)\b(?:\s+(?:on|in|:))?\s*:?\s*(" + MON_RE + r"\s+\d{1,2},\s+\d{4}|\d{1,2}\s+" + MON_RE + r"\s+\d{4}|\d{4}-\d{2}-\d{2}|" + MON_RE + r"\s+\d{4})",
-                          h.get("profile_notes") or "", re.I)
-            if m:
-                self.deceased = parse_date(m.group(1))
 
     def search_dobs(self, data, h):
         phrase = listing_phrase(h)
@@ -1062,6 +1057,10 @@ def decide_person(data, alert, hf, P):
     # ---- location
     shared = sorted(set(cctry) & set(hf.countries))
     unknown_loc = hf.unknown_countries or (P.unknown_countries if P else [])
+    # guard: a screened country that none of the customer's records carry makes the picture incomplete
+    scn = CT.canon(sc.get("country")) if sc.get("country") else None
+    if scn and cctry and scn not in cctry:
+        unknown_loc = list(unknown_loc) + [scn]
     if cctry and hf.countries and not shared and not unknown_loc:
         if not (name_agree and d_agree):
             ev = sorted({s for c in cctry for s in cctry[c]})
@@ -1070,6 +1069,10 @@ def decide_person(data, alert, hf, P):
 
     agree_info = {"name": best_name_agree if name_agree else None, "dob": d_agree, "shared": shared,
                   "dob_ev": dob_ev, "cctry": cctry}
+    if name_agree and d_agree and cctry and hf.countries and not shared:
+        # principle 6: a country difference does not clear a name+DOB match, but it does stop a confirmation
+        agree_info["conflict"] = True
+        agree_info["loc_conflict"] = (sorted(cctry), hf.countries)
     if contras and name_agree and d_agree:
         # facts point both ways: a human decides
         contras = [c for c in contras if c[0] in ("DECEASED",)]
@@ -1107,7 +1110,11 @@ def finish(contras, agree, P, hf):
     if a.get("name"):
         sents.append("The customer's name %s agrees with the hit's name %s." % (a["name"][0], a["name"][1]))
     if a.get("conflict"):
-        sents.append("Name and date of birth agree but another fact conflicts, so the hit is left for a person to decide.")
+        if a.get("loc_conflict"):
+            sents.append("But the customer is linked only to %s and the hit only to %s; a country difference cannot clear a name and date of birth match, so a person decides." % (
+                join_names(a["loc_conflict"][0]), join_names(a["loc_conflict"][1])))
+        else:
+            sents.append("Name and date of birth agree but another fact conflicts, so the hit is left for a person to decide.")
         return {"decision": "REVIEW", "code": "INSUFFICIENT_DATA", "codes": ["INSUFFICIENT_DATA"], "ev": sorted(set(loc_ev + a.get("dob_ev", []))), "sent": sents}
     if a.get("name") and not hf.company and a.get("dob"):
         code = "NAME_DOB_LOCATION_MATCH" if shared else "NAME_DOB_MATCH"
