@@ -355,6 +355,41 @@ DOB_PRE = re.compile(r"(?:\bborn(?:\s+on|\s+in)?|\bdob|\bd\.o\.b\.?|\bbirth(?:\s
 CAPS_STOP = {"SUMSUB", "ONFIDO", "VERIFF", "PERSONA", "JUMIO", "TRULIOO", "IDNOW", "YOTI", "MITEK", "DOB", "ID", "KYC", "UK", "US", "USA", "UAE", "EU", "D.O.B", "AML", "PEP", "N/A", "II", "III", "IV"}
 
 
+TITLE_STOP = {w.lower() for w in """On In At By For Of The A An And Or Identity Identification Verification Verified Validated Check Checked
+Passed Pass Approved Complete Completed Customer Client Applicant User Account Holder Document Documentation Passport National
+ID Card Driving Driver Licence License Residence Permit Registry Extract Date Birth Born DOB Issued Issue Country Provider
+Result Status KYC Onboarding Team Note Notes Successfully Successful Confirmed Confirmation Review Reviewed Sumsub Onfido Veriff
+Persona Jumio Trulioo IDnow Yoti Mitek Mr Mrs Ms Miss Dr Sir Madam Subject Name Named Valid Expired Rejected Failed Ok Okay
+According Per Via Using With From To Showing Shows Shown Record Records Bank Support Team Agent Process Processed Credentials""".split()}
+TITLE_STOP |= set(MONTHS)
+
+
+def titlecase_name(text):
+    """Fallback when the note has no ALL-CAPS name: the longest clean run of 2-5 Title-case words
+    that is not a country, month, provider or document word."""
+    runs, cur = [], []
+    for tok in re.findall(r"[^\s,;:()—–]+", text):
+        t = tok.strip(".'\"")
+        clean = re.fullmatch(r"(?:Mc|Mac|O'|D'|Al-|El-)?[A-ZÀ-ÖØ-Þ][a-zß-öø-ÿ\u0100-\u024F']+(?:-[A-ZÀ-ÖØ-Þa-zß-öø-ÿ][a-zß-öø-ÿ\u0100-\u024F']+)*", t or "") and t.lower() not in TITLE_STOP
+        if clean:
+            cur.append(t)
+        if not clean or tok.endswith((".", ",", ";", ":")) and len(t) > 2:
+            if cur:
+                runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    good = []
+    for r in runs:
+        joined = " ".join(r)
+        if 2 <= len(r) <= 5 and not CT.find_in_text(joined) and not any(CT.find_in_text(x) for x in r):
+            good.append(r)
+    if not good:
+        return None, False
+    best = max(good, key=len)
+    return " ".join(best), True
+
+
 def parse_kyc_note(note):
     text = note.get("text") or ""
     if note.get("channel") != "kyc" and not re.search(r"\b(passport|national id|id card|identity card|driving licen[cs]e|driver'?s licen[cs]e|residence permit|identity document|registry extract|identity|verification|verified)\b", text, re.I):
@@ -392,7 +427,9 @@ def parse_kyc_note(note):
     for tok in re.findall(r"[^\s,;:()]+", text):
         t = tok.strip(".'\"")
         letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ\u0100-\u024F]", "", t)
-        if len(letters) >= 2 and letters == letters.upper() and letters.upper() != letters.lower() and t.upper() not in CAPS_STOP:
+        is_caps = len(letters) >= 2 and letters == letters.upper() and letters.upper() != letters.lower() and t.upper() not in CAPS_STOP
+        is_filler = bool(re.fullmatch(r"\d{1,6}|N/?A|X+|-+|\?+", t)) and t.upper() not in ("ID",)
+        if is_caps or (is_filler and (cur or True)):
             cur.append(t)
         else:
             if len(cur) > len(best):
@@ -400,12 +437,16 @@ def parse_kyc_note(note):
             cur = []
     if len(cur) > len(best):
         best = cur
-    name = " ".join(best) if len(best) >= 2 else None
+    # strip leading/trailing filler-only tokens; keep a run only if it has a real capitalised word
+    while best and not re.search(r"[A-Za-z]{2}", best[-1]):
+        best = best[:-1]
+    has_word = any(re.search(r"[A-Za-z]{2}", t) for t in best)
+    name = " ".join(best) if has_word and len(best) >= 2 else None
+    if has_word and len(best) == 1 and not CT.find_in_text(best[0]):
+        name = best[0]
     name_conf = bool(name)
     if not name:
-        m = re.search(r"\b(?:for|of|named|identity of|customer|applicant)\s+([A-Z][\w'\-]+(?:\s+[A-Z][\w'\-]+){1,4})", text)
-        if m and not CT.find_in_text(m.group(1)):
-            name = m.group(1)
+        name, name_conf = titlecase_name(text)
     ctry = CT.find_in_text(text)
     return {"id": note["note_id"], "src": "note", "name": name, "name_conf": name_conf, "dob": dob, "country": ctry[0] if ctry else None,
             "approved": approved, "date": checked, "text": text}
