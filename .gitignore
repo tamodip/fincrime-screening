@@ -1,0 +1,18 @@
+# Event data must not be committed
+dev/
+*.xlsx
+*.jsonl
+!output/dev.jsonl
+# secrets
+.env
+*.key
+*_API_KEY*
+# misc
+__pycache__/
+*.pyc
+.DS_Store
+# organiser material (not ours to publish)
+/README.md
+/POLICY.md
+/validate.py
+/output.schema.json
