@@ -176,7 +176,7 @@ note-parsed name that is a truncation of the record name. All 24 pass.
 
 ## Adversarial edge cases
 
-`system/tests/edge_cases.py` runs 168 synthetic adversarial cases (customer resolution, KYC
+`system/tests/edge_cases.py` runs 220 synthetic adversarial cases (customer resolution, conflicting links, KYC ordering, KYC
 wording and date formats, transliterations and scripts, company forms, age and report
 boundaries, country synonyms and territories, placeholders) and flags any unsafe clearance.
 The catalogue, with the policy reasoning and the cases the policy leaves open, is in

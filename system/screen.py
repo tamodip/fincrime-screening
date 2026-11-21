@@ -1036,6 +1036,19 @@ def resolve(data, alert):
         path.append("email %s -> %s" % (alert["email"], ", ".join(linked) or "nothing"))
     linked = [r for r in linked if r in data.customers]
     if linked:
+        # fail-safe: other links the alert carries (login, email) that lead to a different person are
+        # considered too, so conflicting links never silently pick one person (edge case XZ01)
+        extra = set()
+        if alert.get("login_handle"):
+            extra |= {a["customer_id"] for a in data.acc_by_login.get(alert["login_handle"].lower(), [])}
+        if alert.get("email"):
+            extra |= set(data.cust_by_email.get(alert["email"].lower(), []))
+        extra = {r for r in extra if r in data.customers and r not in linked}
+        known = {data.person_of[r] for r in linked}
+        extra = sorted(r for r in extra if data.person_of[r] not in known)
+        if extra:
+            linked = linked + extra
+            path.append("other links -> %s (conflicting link, all considered)" % ", ".join(extra))
         if len({data.person_of[r] for r in linked}) > 1:
             fit = [r for r in linked if record_fits(data, r, sc)]
             if fit:

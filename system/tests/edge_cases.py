@@ -910,6 +910,247 @@ def _():
     return w.alert("A-000001", "TEST", ["H-000001"]).hit("H-000001", "A-000001", "Peter Jones", dobs=["1950"])
 
 
+# ============================================================== batch 2 (X-series): KYC ordering, merged-record KYC
+@case("XK01", "kyc2", "approved (1980) -> rejected -> approved (1990): latest approved DOB 1990-05-05 fits the hit", {S, R})
+def _():
+    return std(hdobs=("1990-05-05",), kyc=[K(date="2022-01-01"), K(dob="1950-01-01", date="2023-01-01", result="rejected"),
+                                          K(dob="1990-05-05", date="2025-01-01")])
+
+
+@case("XK02", "kyc2", "approved -> rejected -> approved: an older approved DOB contradicting the hit must not be used to clear", NOT_CLEAR)
+def _():
+    return std(cdob="1990-05-05", hdobs=("1990-05-05",), kyc=[K(dob="1950-01-01", date="2022-01-01"),
+                                                              K(dob="1950-01-01", date="2023-01-01", result="rejected"), K(dob="1990-05-05", date="2025-01-01")])
+
+
+@case("XK03", "kyc2", "two approved checks on the same day with times; the later (17:00) contradicts the hit", {D, R}, amb=True)
+def _():
+    return std(hdobs=("1980-03-03",), kyc=[K(dob="1980-03-03", date="2024-01-01T09:00:00Z"), K(dob="1990-05-05", date="2024-01-01T17:00:00Z")])
+
+
+@case("XK04", "kyc2", "merged duplicate (phone + DOB) has an approved Kenyan passport: hit in Kenya cannot clear on location", NOT_CLEAR)
+def _():
+    w = std(hdobs=(), kyc=K(date="2021-01-01"), hkw={"countries": ["Kenya"]}, ckw={"phone": "+44 7911654321"})
+    w.cust("CUS-000002", "John Smith", "1980-03-03", phone="+44 7911654321").acc("ACC-000002", "CUS-000002").onb("ACC-000002", "CUS-000002", "APP-000002")
+    w.kyc("KYC-000002", "APP-000002", "John Smith", "1980-03-03", country="Kenya", date="2022-01-01")
+    return w
+
+
+@case("XK05", "kyc2", "merged duplicate's newer approved check gives another legal name (policy: latest approved wins)", {D, R}, amb=True)
+def _():
+    w = std(hdobs=(), kyc=K(date="2021-01-01"), ckw={"phone": "+44 7911654322"})
+    w.cust("CUS-000002", "John Smith", "1980-03-03", phone="+44 7911654322").acc("ACC-000002", "CUS-000002").onb("ACC-000002", "CUS-000002", "APP-000002")
+    w.kyc("KYC-000002", "APP-000002", "Peter Jones", "1980-03-03", date="2025-01-01")
+    return w
+
+
+@case("XK06", "kyc2", "only check is 'pending' with another name: no verified name, cannot clear on name", NOT_CLEAR)
+def _():
+    return std(hdobs=(), kyc=K(name="Peter Jones", result="pending"))
+
+
+@case("XK07", "kyc2", "note records a REJECTED check with DOB 1950; record + hit agree on 1985 -> rejected note is not evidence", NOT_CLEAR)
+def _():
+    return std(cdob="1985-04-12", hdobs=("1985-04-12",), notes=[{"text": "Onfido rejected the passport of JOHN SMITH, born 1 January 1950, on 2024-06-01."}])
+
+
+# ============================================================== batch 2: dates of birth
+@case("XB01", "dob2", "hit gives two DOBs, one agrees and one contradicts: one agreeing date prevents clearance", NOT_CLEAR)
+def _():
+    return std(hdobs=("1965-07-07", "1980-03-03"), kyc=K())
+
+
+@case("XB02", "dob2", "hit gives years 1965 and 1980; customer 1980-03-03", NOT_CLEAR)
+def _():
+    return std(hdobs=("1965", "1980"), kyc=K())
+
+
+@case("XB03", "dob2", "DOB only in a search result about a namesake (wrong listing phrase): not attributable, no DOB clearance", NOT_CLEAR)
+def _():
+    return _sr(["John Smith, 25, a sanctioned individual in United Kingdom, was named in May 2010."])
+
+
+@case("XB04", "dob2", "leap day: customer 1980-02-29, hit '29 Feb 1980'", NOT_CLEAR)
+def _():
+    return std(cdob="1980-02-29", hdobs=("29 Feb 1980",), kyc=K(dob="1980-02-29"))
+
+
+@case("XB05", "dob2", "leap day: customer 1980-02-29, hit 1980-03-01 (month differs in same year) -> DOB mismatch allowed", {D, R})
+def _():
+    return std(cdob="1980-02-29", hdobs=("1980-03-01",), kyc=K(dob="1980-02-29"))
+
+
+@case("XB06", "dob2", "hit DOB year-month '1980-03' agrees with 1980-03-03", NOT_CLEAR)
+def _():
+    return std(hdobs=("1980-03",), kyc=K())
+
+
+@case("XB07", "dob2", "hit DOB year-month '1980-07' vs 1980-03-03: month differs", {D, R})
+def _():
+    return std(hdobs=("1980-07",), kyc=K())
+
+
+@case("XB08", "dob2", "hit DOB in the future (2031): typo, contradiction by the letter of the policy", {D, R}, amb=True)
+def _():
+    return std(hdobs=("2031-03-03",), kyc=K())
+
+
+@case("XB09", "dob2", "customer 1981-03-03 vs hit year 1980: within one year, no clearance", NOT_CLEAR)
+def _():
+    return std(cdob="1981-03-03", hdobs=("1980",), kyc=K(dob="1981-03-03"))
+
+
+@case("XB10", "dob2", "age in notes with no year ('aged 45, was sentenced in March'): no birth year, no clearance", NOT_CLEAR)
+def _():
+    return _age("1960-01-01", notes="John Smith, aged 45, was sentenced in March.")
+
+
+@case("XB11", "dob2", "hit DOB '03/04/1980' (day/month order unknown) vs 1980-04-03", NOT_CLEAR)
+def _():
+    return std(cdob="1980-04-03", hdobs=("03/04/1980",), kyc=K(dob="1980-04-03"))
+
+
+@case("XB12", "dob2", "hit DOB with an ISO timestamp '1980-03-03T00:00:00Z'", NOT_CLEAR)
+def _():
+    return std(hdobs=("1980-03-03T00:00:00Z",), kyc=K())
+
+
+# ============================================================== batch 2: deceased
+@case("XE01", "deceased2", "date of death AFTER the screening date: not DECEASED; name + DOB agree", NOT_CLEAR)
+def _():
+    return std(hdobs=("1980-03-03",), kyc=K(), hkw={"deceased": "2026-12-01", "life": "Deceased"})
+
+
+@case("XE02", "deceased2", "death claim only in a search result; profile says Alive with no date", NOT_CLEAR)
+def _():
+    return _sr(["John Smith, a politically exposed person in United Kingdom, died in 2019."], cdob="1980-03-03")
+
+
+@case("XE03", "deceased2", "life_status 'Deceased' but no date of death", NOT_CLEAR)
+def _():
+    return std(hdobs=("1980-03-03",), kyc=K(), hkw={"life": "Deceased"})
+
+
+@case("XE04", "deceased2", "date of death given as a year only (2019), before screening", {D, R})
+def _():
+    return std(hdobs=("1980-03-03",), kyc=K(), hkw={"deceased": "2019", "life": "Deceased"})
+
+
+@case("XE05", "deceased2", "date of death on the screening day itself (not before)", NOT_CLEAR, amb=True)
+def _():
+    return std(hdobs=("1980-03-03",), kyc=K(), hkw={"deceased": SCREENED, "life": "Deceased"})
+
+
+# ============================================================== batch 2: name forms
+for _cid, _v, _h, _al, _d in [
+        ("XN01", "John Andrew Smith", "J. A. SMITH", (), "initials only"),
+        ("XN02", "Maria Garcia-Lopez", "GARCIA LOPEZ, Maria", (), "hyphenated double surname, comma form"),
+        ("XN03", "Ivan Petrovich Sidorov", "Sidorov Ivan", (), "patronymic dropped, surname first"),
+        ("XN04", "Ahmad bin Ismail", "Ahmad Ismail", (), "'bin' particle"),
+        ("XN05", "Siti binti Rahman", "Siti Rahman", (), "'binti' particle"),
+        ("XN06", "Abdullah Al-Rashid", "Abdullah Alrashid", (), "'Al-' joined"),
+        ("XN07", "Aleksandr Ivanov", "Alexander Ivanov", (), "transliteration in the variant list"),
+        ("XN08", "Mohamad Khan", "Mohammed Khan", (), "transliteration not in the variant list"),
+        ("XN09", "John Smith", "Peter Jones", ("John Smith",), "alias matches the customer, primary does not"),
+        ("XN10", "Jose Maria Alvarez de la Cruz Fernandez Ortega", "Jose Alvarez de la Cruz Fernandez Ortega", (), "very long name, one part dropped"),
+        ("XN11", "John\u00a0Smith", "Smith,\u2003John", (), "unicode non-breaking / em spaces"),
+        ("XN12", "Jos\u00e9 M\u00fcller", "Jose Mueller", (), "diacritics and ue transliteration")]:
+    case(_cid, "names2", "verified '%s' vs hit '%s': %s -> no name clearance" % (_v, _h, _d), NOT_CLEAR)(
+        (lambda v, h, al: (lambda: _nm(v, h, hdobs=(), aliases=al)))(_v, _h, _al))
+
+
+# ============================================================== batch 2: companies vs people
+@case("XC01", "companies2", "'Smith & Sons Ltd' vs 'SMITH AND SONS LIMITED', both companies in the UK", NOT_CLEAR)
+def _():
+    return _co("Smith & Sons Ltd", "SMITH AND SONS LIMITED")
+
+
+@case("XC02", "companies2", "hit entity_type missing; name 'John Lewis' looks personal or corporate", NOT_CLEAR)
+def _():
+    w = std(cname="John Lewis", hname="John Lewis", hdobs=(), kyc=K(name="John Lewis"))
+    w.t["hits"][0]["entity_type"] = None
+    return w
+
+
+# ============================================================== batch 2: countries
+@case("XL01", "countries2", "hit nationality given as an adjective 'British' only; customer UK", NOT_CLEAR)
+def _():
+    return _ct("United Kingdom", "GB", [], hkw={"nationality": ["British"]})
+
+
+@case("XL02", "countries2", "hit country 'Iranian' (adjective); customer nationality Iran, residence GB", NOT_CLEAR)
+def _():
+    return _ct("Iran", "GB", ["Iranian"])
+
+
+@case("XL03", "countries2", "dual nationality: record UK, approved passport Iran; hit Iran", NOT_CLEAR)
+def _():
+    return _ct("United Kingdom", "GB", ["Iran"], kyc_country="Iran")
+
+
+@case("XL04", "countries2", "hit countries Iran, but an address ends in United Kingdom", NOT_CLEAR)
+def _():
+    return _ct("United Kingdom", "GB", ["Iran"], hkw={"addresses": ["12 Park Road, London, United Kingdom"]})
+
+
+@case("XL05", "countries2", "hit place_of_birth 'Tehran, Iran' only; customer nationality Iran", NOT_CLEAR)
+def _():
+    return _ct("Iran", "GB", [], hkw={"pob": "Tehran, Iran"})
+
+
+@case("XL06", "countries2", "hit countries 'International' and 'Europe' only: no country to compare", NOT_CLEAR)
+def _():
+    return _ct("United Kingdom", "GB", ["International", "Europe"])
+
+
+@case("XL07", "countries2", "customer residence code 'GB' vs hit 'Great Britain'", NOT_CLEAR)
+def _():
+    return _ct("GB", "GB", ["Great Britain"], kyc_country=None)
+
+
+@case("XL08", "countries2", "hit Kenya; a KYC note says the customer previously lived in Nairobi, Kenya", NOT_CLEAR)
+def _():
+    return _ct("United Kingdom", "GB", ["Kenya"], notes=[{"text": "Customer confirmed they previously lived in Nairobi, Kenya until 2015."}])
+
+
+# ============================================================== batch 2: links, duplicates, robustness
+@case("XZ01", "links2", "account link -> CUS-1 (DOB 1950), email link -> CUS-2 (DOB matches hit): conflicting links", NOT_CLEAR, amb=True)
+def _():
+    w = W().cust("CUS-000001", "John Smith", "1950-01-01").acc("ACC-000001", "CUS-000001")
+    w.cust("CUS-000002", "John Smith", "1980-03-03", email="js80@mail.example")
+    return w.alert("A-000001", "John Smith", ["H-000001"], account="ACC-000001", email="js80@mail.example").hit("H-000001", "A-000001", "Smith, John", dobs=["1980-03-03"])
+
+
+@case("XZ02", "links2", "no link and no customer record at all", NOT_CLEAR)
+def _():
+    return W().alert("A-000001", "John Smith", ["H-000001"]).hit("H-000001", "A-000001", "Smith, John", dobs=["1950"])
+
+
+@case("XZ03", "links2", "duplicate hits on one alert: H-000002 is a clearable namesake, H-000001 matches", NOT_CLEAR)
+def _():
+    w = std(hdobs=("1980-03-03",), kyc=K())
+    w.t["alerts"][0]["hit_ids"].append("H-000002")
+    return w.hit("H-000002", "A-000001", "Smith, John", dobs=["1950"])
+
+
+@case("XZ04", "robust2", "empty-string countries everywhere: no country evidence", NOT_CLEAR)
+def _():
+    return _ct("", "", [""], kyc_country="")
+
+
+@case("XZ05", "robust2", "hit name null; only an alias carries 'John Smith'", NOT_CLEAR)
+def _():
+    w = std(hdobs=(), kyc=K(), hkw={"aliases": ["John Smith"]})
+    w.t["hits"][0]["name"] = None
+    w.t["hits"][0]["best_matching_name"] = None
+    return w
+
+
+@case("XZ06", "robust2", "customer DOB null and approved check DOB null: no DOB clearance", NOT_CLEAR)
+def _():
+    return std(cdob=None, hdobs=("1950",), kyc=K(dob=None))
+
+
 # ============================================================== runner
 def run_all(runners):
     results = {r: {} for r in runners}

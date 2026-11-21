@@ -13,7 +13,7 @@ checks the decision for the one hit against the decisions the policy allows.
 * **Amb.** marks cases the policy text does not settle; their expectation is the safe one (never a clearance),
   with the reasoning in the notes below.
 
-168 cases, 18 marked ambiguous.
+220 cases, 23 marked ambiguous.
 
 ## Customer resolution (principles 2-3)
 
@@ -227,6 +227,70 @@ checks the decision for the one hit against the decisions the policy allows.
 | P07 | screened name 'TEST' only, no link | REVIEW/SAME |  |
 | P08 | placeholder phone + same DOB would import another person's later verified name -> must not clear on name | REVIEW/SAME | yes |
 | P09 | real (non-placeholder) shared phone + same DOB still merges: the duplicate's Kenya blocks a location clearance | REVIEW/SAME |  |
+
+## Batch 2: KYC ordering, two-DOB hits, name forms, deceased, countries, conflicting links (52 cases)
+
+Added 21 Nov 2026. Both systems were run on every case; the one unsafe clearance found (XZ01, both systems) is fixed in ours.
+
+| ID | Area | Case | Allowed | Amb. |
+|---|---|---|---|---|
+| XK01 | kyc2 | approved (1980) -> rejected -> approved (1990): latest approved DOB 1990-05-05 fits the hit | REVIEW/SAME |  |
+| XK02 | kyc2 | approved -> rejected -> approved: an older approved DOB contradicting the hit must not be used to clear | REVIEW/SAME |  |
+| XK03 | kyc2 | two approved checks on the same day with times; the later (17:00) contradicts the hit | DIFFERENT/REVIEW | yes |
+| XK04 | kyc2 | merged duplicate (phone + DOB) has an approved Kenyan passport: hit in Kenya cannot clear on location | REVIEW/SAME |  |
+| XK05 | kyc2 | merged duplicate's newer approved check gives another legal name (policy: latest approved wins) | DIFFERENT/REVIEW | yes |
+| XK06 | kyc2 | only check is 'pending' with another name: no verified name, cannot clear on name | REVIEW/SAME |  |
+| XK07 | kyc2 | note records a REJECTED check with DOB 1950; record + hit agree on 1985 -> rejected note is not evidence | REVIEW/SAME |  |
+| XB01 | dob2 | hit gives two DOBs, one agrees and one contradicts: one agreeing date prevents clearance | REVIEW/SAME |  |
+| XB02 | dob2 | hit gives years 1965 and 1980; customer 1980-03-03 | REVIEW/SAME |  |
+| XB03 | dob2 | DOB only in a search result about a namesake (wrong listing phrase): not attributable, no DOB clearance | REVIEW/SAME |  |
+| XB04 | dob2 | leap day: customer 1980-02-29, hit '29 Feb 1980' | REVIEW/SAME |  |
+| XB05 | dob2 | leap day: customer 1980-02-29, hit 1980-03-01 (month differs in same year) -> DOB mismatch allowed | DIFFERENT/REVIEW |  |
+| XB06 | dob2 | hit DOB year-month '1980-03' agrees with 1980-03-03 | REVIEW/SAME |  |
+| XB07 | dob2 | hit DOB year-month '1980-07' vs 1980-03-03: month differs | DIFFERENT/REVIEW |  |
+| XB08 | dob2 | hit DOB in the future (2031): typo, contradiction by the letter of the policy | DIFFERENT/REVIEW | yes |
+| XB09 | dob2 | customer 1981-03-03 vs hit year 1980: within one year, no clearance | REVIEW/SAME |  |
+| XB10 | dob2 | age in notes with no year ('aged 45, was sentenced in March'): no birth year, no clearance | REVIEW/SAME |  |
+| XB11 | dob2 | hit DOB '03/04/1980' (day/month order unknown) vs 1980-04-03 | REVIEW/SAME |  |
+| XB12 | dob2 | hit DOB with an ISO timestamp '1980-03-03T00:00:00Z' | REVIEW/SAME |  |
+| XE01 | deceased2 | date of death AFTER the screening date: not DECEASED; name + DOB agree | REVIEW/SAME |  |
+| XE02 | deceased2 | death claim only in a search result; profile says Alive with no date | REVIEW/SAME |  |
+| XE03 | deceased2 | life_status 'Deceased' but no date of death | REVIEW/SAME |  |
+| XE04 | deceased2 | date of death given as a year only (2019), before screening | DIFFERENT/REVIEW |  |
+| XE05 | deceased2 | date of death on the screening day itself (not before) | REVIEW/SAME | yes |
+| XN01 | names2 | verified 'John Andrew Smith' vs hit 'J. A. SMITH': initials only -> no name clearance | REVIEW/SAME |  |
+| XN02 | names2 | verified 'Maria Garcia-Lopez' vs hit 'GARCIA LOPEZ, Maria': hyphenated double surname, comma form -> no name clearance | REVIEW/SAME |  |
+| XN03 | names2 | verified 'Ivan Petrovich Sidorov' vs hit 'Sidorov Ivan': patronymic dropped, surname first -> no name clearance | REVIEW/SAME |  |
+| XN04 | names2 | verified 'Ahmad bin Ismail' vs hit 'Ahmad Ismail': 'bin' particle -> no name clearance | REVIEW/SAME |  |
+| XN05 | names2 | verified 'Siti binti Rahman' vs hit 'Siti Rahman': 'binti' particle -> no name clearance | REVIEW/SAME |  |
+| XN06 | names2 | verified 'Abdullah Al-Rashid' vs hit 'Abdullah Alrashid': 'Al-' joined -> no name clearance | REVIEW/SAME |  |
+| XN07 | names2 | verified 'Aleksandr Ivanov' vs hit 'Alexander Ivanov': transliteration in the variant list -> no name clearance | REVIEW/SAME |  |
+| XN08 | names2 | verified 'Mohamad Khan' vs hit 'Mohammed Khan': transliteration not in the variant list -> no name clearance | REVIEW/SAME |  |
+| XN09 | names2 | verified 'John Smith' vs hit 'Peter Jones': alias matches the customer, primary does not -> no name clearance | REVIEW/SAME |  |
+| XN10 | names2 | verified 'Jose Maria Alvarez de la Cruz Fernandez Ortega' vs hit 'Jose Alvarez de la Cruz Fernandez Ortega': very long name, one part dropped -> no name clearance | REVIEW/SAME |  |
+| XN11 | names2 | verified 'John Smith' vs hit 'Smith, John': unicode non-breaking / em spaces -> no name clearance | REVIEW/SAME |  |
+| XN12 | names2 | verified 'José Müller' vs hit 'Jose Mueller': diacritics and ue transliteration -> no name clearance | REVIEW/SAME |  |
+| XC01 | companies2 | 'Smith & Sons Ltd' vs 'SMITH AND SONS LIMITED', both companies in the UK | REVIEW/SAME |  |
+| XC02 | companies2 | hit entity_type missing; name 'John Lewis' looks personal or corporate | REVIEW/SAME |  |
+| XL01 | countries2 | hit nationality given as an adjective 'British' only; customer UK | REVIEW/SAME |  |
+| XL02 | countries2 | hit country 'Iranian' (adjective); customer nationality Iran, residence GB | REVIEW/SAME |  |
+| XL03 | countries2 | dual nationality: record UK, approved passport Iran; hit Iran | REVIEW/SAME |  |
+| XL04 | countries2 | hit countries Iran, but an address ends in United Kingdom | REVIEW/SAME |  |
+| XL05 | countries2 | hit place_of_birth 'Tehran, Iran' only; customer nationality Iran | REVIEW/SAME |  |
+| XL06 | countries2 | hit countries 'International' and 'Europe' only: no country to compare | REVIEW/SAME |  |
+| XL07 | countries2 | customer residence code 'GB' vs hit 'Great Britain' | REVIEW/SAME |  |
+| XL08 | countries2 | hit Kenya; a KYC note says the customer previously lived in Nairobi, Kenya | REVIEW/SAME |  |
+| XZ01 | links2 | account link -> CUS-1 (DOB 1950), email link -> CUS-2 (DOB matches hit): conflicting links | REVIEW/SAME | yes |
+| XZ02 | links2 | no link and no customer record at all | REVIEW/SAME |  |
+| XZ03 | links2 | duplicate hits on one alert: H-000002 is a clearable namesake, H-000001 matches | REVIEW/SAME |  |
+| XZ04 | robust2 | empty-string countries everywhere: no country evidence | REVIEW/SAME |  |
+| XZ05 | robust2 | hit name null; only an alias carries 'John Smith' | REVIEW/SAME |  |
+| XZ06 | robust2 | customer DOB null and approved check DOB null: no DOB clearance | REVIEW/SAME |  |
+
+XZ01 note: the alert's account link and email link lead to two different people. Principle 2 says a link that leads to
+more than one person is decided by the screened details; the engine used to follow only the first link that resolved. It now
+also considers the other links when they lead to a different person, so the two candidates' different decisions give `REVIEW`
+(`AMBIGUOUS_CUSTOMER_RECORD`). Dev output is byte-identical before and after (no dev alert has conflicting links).
 
 ## Decisions on the open cases (expected-cost reasoning)
 
