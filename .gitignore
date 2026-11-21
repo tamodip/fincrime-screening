@@ -12,7 +12,7 @@ __pycache__/
 *.pyc
 .DS_Store
 # organiser material (not ours to publish)
-/README.md
+# (root README.md is ours)
 /POLICY.md
 /validate.py
 /output.schema.json
