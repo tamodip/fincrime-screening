@@ -114,7 +114,7 @@ def doc_number_link_adds_country():
     cs = [cust("CUS-000001", "Jane Doe", "1980-01-01", phone="+44 1"), cust("CUS-000002", "Jane Doe", "1980-01-01", nat="Kenya", res="KE", phone="+254 2")]
     r = run_case(cs, [acc("ACC-000001", "CUS-000001"), acc("ACC-000002", "CUS-000002")],
                  [onb("ACC-000001", "CUS-000001", "APP-000001"), onb("ACC-000002", "CUS-000002", "APP-000002")],
-                 [kyc("KYC-000001", "APP-000001", "Jane Doe", "1980-01-01", doc="X123"), kyc("KYC-000002", "APP-000002", "Jane Doe", "1980-01-01", country="Kenya", doc="X123", date="2023-01-01")],
+                 [kyc("KYC-000001", "APP-000001", "Jane Doe", "1980-01-01", doc="X71726641"), kyc("KYC-000002", "APP-000002", "Jane Doe", "1980-01-01", country="Kenya", doc="X71726641", date="2023-01-01")],
                  [alert("A-000001", "Jane Doe", ["H-000001"], account="ACC-000001")],
                  [hit("H-000001", "A-000001", "Doe, Jane", countries=["Kenya"])])
     return r["H-000001"]["decision"] != "DIFFERENT_ENTITY"

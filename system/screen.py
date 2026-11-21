@@ -362,9 +362,11 @@ class Data:
         for rid, c in self.customers.items():
             ph = re.sub(r"\D", "", c.get("phone") or "")
             d = parse_date(c.get("dob"))
-            if len(ph) >= 6 and d and d[1] and d[2]:
+            if len(ph) >= 6 and len(set(ph)) > 2 and d and d[1] and d[2]:
                 by_phone_dob[(ph, d)].append(rid)
         for rids in by_phone_dob.values():
+            if len(rids) > 6:
+                continue  # a phone+DOB shared this widely is a placeholder, not one person
             for r in rids[1:]:
                 union(rids[0], r)
         by_doc = defaultdict(set)
@@ -373,10 +375,12 @@ class Data:
                 for k in self.kyc_by_app.get(app, ()):
                     if (k.get("result") or "").lower() == "approved" and k.get("document_number"):
                         dn = re.sub(r"[^A-Z0-9]", "", k["document_number"].upper())
-                        if dn:
+                        if len(dn) >= 5 and len(set(dn)) > 2 and dn not in ("UNKNOWN", "NONE", "NULL", "NOTAVAILABLE"):
                             by_doc[dn].add(rid)
         for rids in by_doc.values():
             rids = sorted(rids)
+            if len(rids) > 6:
+                continue
             for r in rids[1:]:
                 union(rids[0], r)
         self.person_of = {}
@@ -390,7 +394,7 @@ class Data:
 
 
 # ----------------------------------------------------------------------------- KYC notes
-NEG_RE = re.compile(r"\b(reject\w*|fail\w*|declin\w*|expired|unsuccessful\w*|could not|couldn't|unable|not (?:be )?(?:verified|approved|validated|confirmed|pass\w*)|mismatch\w*|invalid|denied|refused|cancel\w*|did not pass|no longer valid)\b", re.I)
+NEG_RE = re.compile(r"\b(reject\w*|fail\w*|declin\w*|expired|unsuccessful\w*|could not|couldn't|unable|not (?:be )?(?:verified|approved|validated|confirmed|pass\w*)|mismatch\w*|invalid|denied|refused|cancel\w*|did not pass|no longer valid|pending|awaiting|requested|resubmi\w*|under review|in progress|incomplete|on hold|not yet|inconclusive|flagged|suspended|revoked|superseded|withdrawn|did not match|does not match|no match)\b", re.I)
 VERIFY_RE = re.compile(r"\b(verif\w*|validat\w*|confirm\w*|pass(?:ed)?|approv\w*|complet\w*|check(?:ed)?|process\w*|accept\w*|clear\w*|success\w*|authenticat\w*|cleared|ok)\b", re.I)
 DOB_KW = re.compile(r"(born|dob|d\.o\.b|birth|birthdate)", re.I)
 DOB_PRE = re.compile(r"(?:\bborn(?:\s+on|\s+in)?|\bdob|\bd\.o\.b\.?|\bbirth(?:\s*date)?(?:\s+of)?|\bdate\s+of\s+birth(?:\s+of)?|\bbirthday)\s*[:=,(\-]?\s*$", re.I)

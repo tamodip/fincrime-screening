@@ -198,3 +198,7 @@ parenthesised ages); all are fixed.
   a screened country that none of the customer's records carry; a KYC-note name we could not
   parse confidently (it is never used for `NAME_MISMATCH_VERIFIED`); name and DOB agreeing
   while something else contradicts.
+* Input hygiene: a KYC note that says the check is pending, requested, under review,
+  inconclusive, revoked or superseded is not an approved check. Placeholder document numbers
+  (short, or one or two repeated characters) and phone/DOB or document values shared by more
+  than six records never merge records into one person.
