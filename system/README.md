@@ -117,7 +117,8 @@ and DOB agree and nothing contradicts them (`NAME_DOB_LOCATION_MATCH` if a count
 shared, `NAME_DOB_MATCH` if either side has no country); if their countries are disjoint the
 hit is `REVIEW`, because a country difference can neither clear nor be ignored. A company is
 confirmed when name and country agree (`NAME_LOCATION_MATCH`). If name and DOB agree but
-something contradicts, or nothing settles it → `REVIEW / INSUFFICIENT_DATA`. Without a
+something contradicts, or nothing settles it → `REVIEW / INSUFFICIENT_DATA`; the one exception
+is a `deceased_date` before screening, which clears on its own as the policy states. Without a
 resolved customer the system never clears or confirms on screened (declared) data.
 
 ## Evidence representation
@@ -173,6 +174,15 @@ replace the approved KYC check, a provider "DOB:" field line that contradicts or
 other hit dates (veto only), a possessive name in a KYC note ("MILLER's passport") and a
 note-parsed name that is a truncation of the record name. All 24 pass.
 
+## Adversarial edge cases
+
+`system/tests/edge_cases.py` runs 157 synthetic adversarial cases (customer resolution, KYC
+wording and date formats, transliterations and scripts, company forms, age and report
+boundaries, country synonyms and territories, placeholders) and flags any unsafe clearance.
+The catalogue, with the policy reasoning and the cases the policy leaves open, is in
+`system/tests/EDGE_CASES.md`. All pass. It can run several systems side by side:
+`python3 system/tests/edge_cases.py system/run other/system/run`.
+
 ## Robustness testing
 
 `python3 system/tests/paraphrase_check.py dev /tmp/para` rewrites the free text of the data
@@ -207,6 +217,13 @@ parenthesised ages); all are fixed.
   name (e.g. `MARCUS DAVID` for `Marcus David Miller`) is treated as a parsing miss and never
   clears on `NAME_MISMATCH_VERIFIED`.
 * Input hygiene: a KYC note that says the check is pending, requested, under review,
-  inconclusive, revoked or superseded is not an approved check. Placeholder document numbers
-  (short, or one or two repeated characters) and phone/DOB or document values shared by more
-  than six records never merge records into one person.
+  inconclusive, revoked or superseded is not an approved check. Placeholder words as document
+  numbers (UNKNOWN, N/A, TEST…) never link records, and a phone/DOB or document value shared by
+  more than six records is not treated as one person. Otherwise phone + full DOB merges exactly
+  as the policy says, even for a placeholder-looking phone.
+* Bare "Congo" or "Korea" fits two countries: unknown in a structured field (blocks a location
+  clearance), both countries when found in free text.
+* Cyrillic/Greek look-alike letters inside Latin words are mapped to Latin; a verified name
+  written in another script is never used to clear on `NAME_MISMATCH_VERIFIED`.
+* KYC notes: two-digit years are expanded; a note whose own dates show month-first order is
+  read month-first (the bank's default is day-first).
