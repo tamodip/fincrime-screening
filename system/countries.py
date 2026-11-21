@@ -38,7 +38,7 @@ Chile|CL|Chilean
 China|CN|Chinese;People's Republic of China;PRC
 Colombia|CO|Colombian
 Comoros|KM|Comoran
-Congo|CG|Congolese;Republic of the Congo
+Congo|CG|Republic of the Congo;Congo-Brazzaville;Congo Republic
 Democratic Republic of the Congo|CD|DR Congo;DRC;Congo-Kinshasa
 Costa Rica|CR|Costa Rican
 Cote d'Ivoire|CI|Ivorian;Ivory Coast;Côte d'Ivoire;Cote D'Ivoire
@@ -91,7 +91,7 @@ Kazakhstan|KZ|Kazakh;Kazakhstani
 Kenya|KE|Kenyan
 Kiribati|KI|I-Kiribati
 North Korea|KP|North Korean;DPRK;Democratic People's Republic of Korea
-South Korea|KR|South Korean;Korean;Republic of Korea;Korea
+South Korea|KR|South Korean;Republic of Korea
 Kosovo|XK|Kosovar;Kosovan
 Kuwait|KW|Kuwaiti
 Kyrgyzstan|KG|Kyrgyz
@@ -238,6 +238,11 @@ for _line in _RAW.strip().splitlines():
     for _a in _al.split(";"):
         if _a:
             NAME2CANON[_fold(_a)] = _name
+# bare names that fit two countries: unknown in structured fields (blocks a location clearance),
+# both countries when found in free text (so a residence note can never narrow the picture)
+AMBIGUOUS = {"congo": ["Congo", "Democratic Republic of the Congo"], "congolese": ["Congo", "Democratic Republic of the Congo"],
+             "the congo": ["Congo", "Democratic Republic of the Congo"],
+             "korea": ["South Korea", "North Korea"], "korean": ["South Korea", "North Korea"]}
 NOT_COUNTRIES = {"international", "europe", "global", "worldwide", "unknown", "none", "n/a", "na", "africa", "asia", "middle east", "eu", "european union"}
 
 
@@ -251,6 +256,8 @@ def canon(value):
     if v.upper() in ISO2CANON and len(v) == 2:
         return ISO2CANON[v.upper()]
     f = _fold(v)
+    if f in AMBIGUOUS:
+        return None
     if f in NOT_COUNTRIES:
         return None
     if f in NAME2CANON:
@@ -260,7 +267,7 @@ def canon(value):
     return None
 
 
-_TEXT_KEYS = sorted(NAME2CANON, key=len, reverse=True)
+_TEXT_KEYS = sorted(set(NAME2CANON) | set(AMBIGUOUS), key=len, reverse=True)
 _TEXT_RE = _re.compile(r"(?<![A-Za-z])(" + "|".join(_re.escape(k) for k in _TEXT_KEYS if len(k) > 2 or k in ("uk",)) + r")(?![A-Za-z])")
 
 
@@ -272,7 +279,7 @@ def find_in_text(text):
     f = _re.sub(r"\bnew (jersey|mexico|south wales|york|hampshire)\b", " ", f)
     out = []
     for m in _TEXT_RE.finditer(f):
-        c = NAME2CANON[m.group(1)]
-        if c not in out:
-            out.append(c)
+        for c in AMBIGUOUS.get(m.group(1)) or [NAME2CANON[m.group(1)]]:
+            if c not in out:
+                out.append(c)
     return out

@@ -170,12 +170,27 @@ PLACEHOLDERS = {"na", "n/a", "test", "unknown", "xxx", "xx", "none", "null", "ni
                 "unk", "nn", "fnu", "lnu", "nfn", "nln", "notknown", "notprovided", "blank", "sample", "x"}
 
 
+# Cyrillic/Greek letters that look like Latin ones; mapped only inside words that also contain Latin letters
+CONFUSABLE = str.maketrans("АаВЕеКкМНОоРрСсТуХхІіЈјЅѕԁΑΒΕΖΗΙΚΜΝΟοΡΤΥΧ", "AaBEeKkMHOoPpCcTyXxIiJjSsdABEZHIKMNOoPTYX")
+
+
+def _unconfuse(s):
+    return re.sub(r"\w+", lambda m: m.group(0).translate(CONFUSABLE) if re.search(r"[A-Za-z]", m.group(0)) else m.group(0), s)
+
+
+def non_latin(s):
+    """True when a name still has letters outside the Latin script after folding (e.g. written in Cyrillic)."""
+    return bool(re.search(r"[^\W\d_a-z\u00c0-\u024f\u1e00-\u1eff]", fold(s or "")))
+
+
 def fold(s):
+    s = _unconfuse(s)
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
     repl = {"ß": "ss", "ø": "o", "Ø": "o", "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe", "ł": "l", "Ł": "l", "đ": "d", "Đ": "d",
-            "ı": "i", "þ": "th"}
-    return "".join(repl.get(c, c) for c in s).lower()
+            "ı": "i", "þ": "th", "ð": "d", "ħ": "h", "ŋ": "n", "ŧ": "t", "ĸ": "k"}
+    s = s.lower()
+    return "".join(repl.get(c, c) for c in s)
 
 
 class NameModel:
@@ -362,7 +377,7 @@ class Data:
         for rid, c in self.customers.items():
             ph = re.sub(r"\D", "", c.get("phone") or "")
             d = parse_date(c.get("dob"))
-            if len(ph) >= 6 and len(set(ph)) > 2 and d and d[1] and d[2]:
+            if len(ph) >= 6 and d and d[1] and d[2]:
                 by_phone_dob[(ph, d)].append(rid)
         for rids in by_phone_dob.values():
             if len(rids) > 6:
@@ -375,7 +390,7 @@ class Data:
                 for k in self.kyc_by_app.get(app, ()):
                     if (k.get("result") or "").lower() == "approved" and k.get("document_number"):
                         dn = re.sub(r"[^A-Z0-9]", "", k["document_number"].upper())
-                        if len(dn) >= 5 and len(set(dn)) > 2 and dn not in ("UNKNOWN", "NONE", "NULL", "NOTAVAILABLE"):
+                        if len(dn) >= 3 and dn not in ("UNKNOWN", "NONE", "NULL", "NA", "NOTAVAILABLE", "TEST", "XXX"):
                             by_doc[dn].add(rid)
         for rids in by_doc.values():
             rids = sorted(rids)
@@ -436,8 +451,21 @@ def titlecase_name(text):
     return " ".join(best), True
 
 
+def _normalise_note_dates(text):
+    """Bank notes write slash dates day-first. Two-digit years are expanded (yy <= 26 -> 20yy, else 19yy);
+    if the note itself shows month-first order (a middle part above 12), its slash dates are swapped."""
+    def yy(m):
+        y = int(m.group(3))
+        return "%s/%s/%d" % (m.group(1), m.group(2), (2000 + y) if y <= 26 else (1900 + y))
+    text = re.sub(r"(?<![\d/.])(\d{1,2})[/.](\d{1,2})[/.](\d{2})(?![\d/]|\.\d)", yy, text)
+    pairs = re.findall(r"(?<![\d/.])(\d{1,2})/(\d{1,2})/(\d{4})(?![\d/])", text)
+    if any(int(b) > 12 and int(a) <= 12 for a, b, _ in pairs) and not any(int(a) > 12 for a, b, _ in pairs):
+        text = re.sub(r"(?<![\d/.])(\d{1,2})/(\d{1,2})/(\d{4})(?![\d/])", lambda m: "%s/%s/%s" % (m.group(2), m.group(1), m.group(3)), text)
+    return text
+
+
 def parse_kyc_note(note):
-    text = note.get("text") or ""
+    text = _normalise_note_dates(note.get("text") or "")
     if note.get("channel") != "kyc" and not re.search(r"\b(passport|national id|id card|identity card|driving licen[cs]e|driver'?s licen[cs]e|residence permit|identity document|registry extract|travel document|identity card)\b", text, re.I):
         return None
     if note.get("channel") != "kyc" and not VERIFY_RE.search(text):
@@ -1089,6 +1117,8 @@ def decide_person(data, alert, hf, P):
     if vname and P.latest.get("src") == "note":
         vp = set(nm.parts(vname, cust_company))
         trunc = any(vp < set(nm.parts(n, cust_company)) for n in P.record_names() if n)
+    if vname and non_latin(vname):
+        trunc = True  # a name in another script cannot be compared part by part: never clear on it
     if vname and not trunc and P.latest.get("name_conf") and len(nm.parts(vname, cust_company)) >= (1 if cust_company else 2):
         if not any(nm.agree(vname, hn, cust_company or hf.company) for hn in hf.names) and hf.names:
             contras.append(("NAME_MISMATCH_VERIFIED", [P.latest["id"]], "The customer's verified name is %s (%s), which does not agree with the hit's name %s." % (
@@ -1123,13 +1153,13 @@ def decide_person(data, alert, hf, P):
                 agree_info["field_dob_conflict"] = hf.field_dobs
                 return finish([], agree_info, P, hf)
     if contras and name_agree and d_agree:
-        # facts point both ways: a human decides
-        contras = [c for c in contras if c[0] in ("DECEASED",)]
-        if contras:
-            agree_info["conflict"] = True
-            contras = []
+        # facts point both ways: a human decides -- except a date of death before screening, which the policy
+        # makes a clearance on its own (a person who died before the screening is not the living customer)
+        if any(c[0] == "DECEASED" for c in contras):
+            contras = [c for c in contras if c[0] == "DECEASED"]
         else:
             agree_info["conflict"] = True
+            contras = []
     return finish(contras, agree_info, P, hf)
 
 
