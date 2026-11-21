@@ -176,7 +176,7 @@ note-parsed name that is a truncation of the record name. All 24 pass.
 
 ## Adversarial edge cases
 
-`system/tests/edge_cases.py` runs 157 synthetic adversarial cases (customer resolution, KYC
+`system/tests/edge_cases.py` runs 168 synthetic adversarial cases (customer resolution, KYC
 wording and date formats, transliterations and scripts, company forms, age and report
 boundaries, country synonyms and territories, placeholders) and flags any unsafe clearance.
 The catalogue, with the policy reasoning and the cases the policy leaves open, is in
@@ -190,13 +190,26 @@ folder while keeping every fact: KYC notes in four new sentence shapes with five
 formats and 30% Title-case names, residence notes reworded, every search snippet rebuilt in
 three new shapes (name/age/role/country/month in different orders, "(37)", "aged 37",
 "the 37-year-old"), and profile-note age sentences replaced with new templates ("X (37) was
-questioned in May 1999", "then 37 years of age", "at the age of 37"). It then reruns the
-system: **0 of 819 decisions change**. Earlier rounds of this test exposed bugs that would have
+questioned in May 1999", "then 37 years of age", "at the age of 37"). It then A second stage rewrites
+structured fields (customer and KYC dates in five formats, country names ↔ ISO codes ↔ upper
+case, record names in upper/Title case). It then reruns the system: **0 of 819 decisions
+change**. The second solution's stress test (dates, name order, accents, country codes and
+nationalities) also leaves all 819 unchanged. Earlier rounds of this test exposed bugs that would have
 caused unsafe clearances or missed facts (a check date read as the birth date; "United States"
 read as a person's name; sentence splitting after an initial such as "Mark E. Phillips";
 parenthesised ages); all are fixed.
 
 ## Honest limitations
+
+* Cases the policy text leaves open, and the safe choice made for each (details in
+  `system/tests/EDGE_CASES.md`): no customer record found (never clear or confirm on screened
+  data alone); two approved checks on the same day; DOB ranges and "circa"; a dated-report form
+  that does not start its line (not a report); trading-as company names; "Organisation" as a
+  company; England/Scotland/Wales/Northern Ireland read as the United Kingdom; Hong Kong, Macao,
+  Taiwan and Puerto Rico as their own territories (policy: territories count as their own
+  country); bare "Congo"/"Korea" unknown; placeholder phones decided both ways; and a hit whose
+  own DOB agrees with the customer while the customer would be under 16 at its earliest report
+  is `REVIEW` (the hit's facts contradict each other), not a clearance.
 
 * Free-text parsing is regex based. KYC notes whose verified name is not written in
   capitals fall back to a Title-case pattern, and such names are never used to clear on
@@ -219,8 +232,14 @@ parenthesised ages); all are fixed.
 * Input hygiene: a KYC note that says the check is pending, requested, under review,
   inconclusive, revoked or superseded is not an approved check. Placeholder words as document
   numbers (UNKNOWN, N/A, TEST…) never link records, and a phone/DOB or document value shared by
-  more than six records is not treated as one person. Otherwise phone + full DOB merges exactly
-  as the policy says, even for a placeholder-looking phone.
+  more than six records is not treated as one person. Phone + full DOB merges as the policy says;
+  when the phone is a placeholder (its last 7 digits all the same, e.g. `0000000`), the hit is
+  decided with and without that link and goes to `REVIEW` if the two answers differ, so a
+  placeholder can neither import another person's facts into a clearance nor hide them.
+* Approximate hit DOBs ("circa 1980", "about 1980", "1980?", "1980s") can agree but never
+  contradict; a range ("1979-1981") or decade gives every year in it.
+* A KYC note that itself shows month-first dates keeps only the year of any slash date that
+  reads both ways; otherwise slash dates are day-first, as everywhere in the bank's data.
 * Bare "Congo" or "Korea" fits two countries: unknown in a structured field (blocks a location
   clearance), both countries when found in free text.
 * Cyrillic/Greek look-alike letters inside Latin words are mapped to Latin; a verified name

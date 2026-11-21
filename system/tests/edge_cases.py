@@ -339,6 +339,11 @@ def _():
                notes=[{"text": "Customer called about a card payment; identity verified on the phone by security questions.", "channel": "phone", "date": "2025-02-02"}])
 
 
+@case("K20", "kyc", "note mixes a month-first check date with an ambiguous DOB 04/12/1985: keep only the year", NOT_CLEAR)
+def _():
+    return std(hdobs=("1985-12-04",), notes=[{"text": "Passport of JOHN SMITH verified by Sumsub on 06/25/2024, DOB 04/12/1985."}])
+
+
 # ============================================================== names (a verified name is present, so a wrong name rule clears)
 def _nm(vname, hname, hdobs=("1980-03-03",), aliases=(), cname=None, hkw=None):
     h = {"aliases": list(aliases)}
@@ -645,6 +650,27 @@ def _():
     return std(hdobs=("1980-03-03",), kyc=K(), hkw={"deceased": "05/01/2019", "life": "Deceased"})
 
 
+@case("T31", "dates", "hit DOB 'circa 1980', customer 1983: approximate, never a contradiction", NOT_CLEAR)
+def _():
+    return std(cdob="1983-01-01", hdobs=("circa 1980",), kyc=K(dob="1983-01-01"))
+
+
+@case("T32", "dates", "hit DOB '1980s' (a decade), customer 1985: agrees, no clearance", NOT_CLEAR)
+def _():
+    return std(cdob="1985-01-01", hdobs=("1980s",), kyc=K(dob="1985-01-01"))
+
+
+@case("T33", "dates", "hit DOB range '1979-1981', customer 1984: every year >1 away -> DOB mismatch", {D})
+def _():
+    return std(cdob="1984-01-01", hdobs=("1979-1981",), kyc=K(dob="1984-01-01"))
+
+
+@case("T34", "dates", "name and DOB agree but customer under 16 at the earliest report (inconsistent hit) -> REVIEW", {R, D}, amb=True)
+def _():
+    return std(cdob="2005-01-01", hdobs=("2005",), kyc=K(dob="2005-01-01"),
+               hkw={"notes": "Profile.\n\nAccording to BBC; March 3, 2012: named in an inquiry."})
+
+
 # ============================================================== search results
 def _sr(snips, cdob="1960-01-01", hkw=None):
     return std(cdob=cdob, hdobs=(), kyc=K(dob=cdob), srs=[("john smith", s) for s in snips], hkw=hkw)
@@ -780,6 +806,26 @@ def _():
     return _ct("United Kingdom", "GB", ["Freedonia"])
 
 
+@case("C31", "countries", "Macao is its own territory: customer China only vs hit 'Macao Special Administrative Region of China'", {D})
+def _():
+    return _ct("China", "CN", ["Macao Special Administrative Region of China"], kyc_country="China")
+
+
+@case("C32", "countries", "Scotland / Wales are the United Kingdom", NOT_CLEAR)
+def _():
+    return _ct("United Kingdom", "GB", ["Scotland", "Wales"])
+
+
+@case("C33", "countries", "'Taiwan, Province of China' is not read as a country: no clearance against China", NOT_CLEAR, amb=True)
+def _():
+    return _ct("China", "CN", ["Taiwan, Province of China"], kyc_country="China")
+
+
+@case("C34", "countries", "Taiwan vs China: separate countries/territories -> location clears", {D}, amb=True)
+def _():
+    return _ct("China", "CN", ["Taiwan"], kyc_country="China")
+
+
 # ============================================================== hits / type
 @case("H01", "hits", "hit entity type missing: no type contradiction", NOT_CLEAR)
 def _():
@@ -835,6 +881,21 @@ def _():
 def _():
     w = std(hdobs=(), ckw={"phone": "0000000000"}, hkw={"countries": ["Kenya"]})
     w.cust("CUS-000002", "John Smith", "1980-03-03", nat="Kenya", res="KE", phone="0000000000")
+    return w
+
+
+@case("P08", "placeholders", "placeholder phone + same DOB would import another person's later verified name -> must not clear on name", NOT_CLEAR, amb=True)
+def _():
+    w = std(hdobs=(), kyc=K(date="2021-01-01"), ckw={"phone": "+44 7000000000"})
+    w.cust("CUS-000002", "Peter Jones", "1980-03-03", phone="+44 7000000000").acc("ACC-000002", "CUS-000002").onb("ACC-000002", "CUS-000002", "APP-000002")
+    w.kyc("KYC-000002", "APP-000002", "Peter Jones", "1980-03-03", date="2025-01-01")
+    return w
+
+
+@case("P09", "placeholders", "real (non-placeholder) shared phone + same DOB still merges: the duplicate's Kenya blocks a location clearance", NOT_CLEAR)
+def _():
+    w = std(hdobs=(), ckw={"phone": "+44 7911123456"}, hkw={"countries": ["Kenya"]})
+    w.cust("CUS-000002", "John Smith", "1980-03-03", nat="Kenya", res="KE", phone="+44 7911123456")
     return w
 
 

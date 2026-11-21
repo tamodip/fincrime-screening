@@ -13,7 +13,7 @@ checks the decision for the one hit against the decisions the policy allows.
 * **Amb.** marks cases the policy text does not settle; their expectation is the safe one (never a clearance),
   with the reasoning in the notes below.
 
-157 cases, 14 marked ambiguous.
+168 cases, 18 marked ambiguous.
 
 ## Customer resolution (principles 2-3)
 
@@ -60,6 +60,7 @@ checks the decision for the one hit against the decisions the policy allows.
 | K17 | latest approved check has no DOB: other DOBs still count, no contradiction | REVIEW/SAME |  |
 | K18 | note marked pending, later than the approved table check: not an approved check | SAME |  |
 | K19 | support note 'details verified on the phone' is not an identity check | SAME |  |
+| K20 | note mixes a month-first check date with an ambiguous DOB 04/12/1985: keep only the year | REVIEW/SAME |  |
 
 ## Names (principle 8)
 
@@ -147,6 +148,10 @@ checks the decision for the one hit against the decisions the policy allows.
 | T28 | birth sentence only in the second paragraph does not count; no other DOB | REVIEW/SAME |  |
 | T29 | dobs field wins over a different year in the notes | SAME |  |
 | T30 | deceased_date in provider slash format before screening | DIFFERENT |  |
+| T31 | hit DOB 'circa 1980', customer 1983: approximate, never a contradiction | REVIEW/SAME |  |
+| T32 | hit DOB '1980s' (a decade), customer 1985: agrees, no clearance | REVIEW/SAME |  |
+| T33 | hit DOB range '1979-1981', customer 1984: every year >1 away -> DOB mismatch | DIFFERENT |  |
+| T34 | name and DOB agree but customer under 16 at the earliest report (inconsistent hit) -> REVIEW | DIFFERENT/REVIEW | yes |
 
 ## Search results (principle 5)
 
@@ -194,6 +199,10 @@ checks the decision for the one hit against the decisions the policy allows.
 | C28 | customer Korea/KR vs hit ['South Korea']: bare 'Korea' on the customer side (must not clear on location) | REVIEW/SAME | yes |
 | C29 | plain disjoint countries -> location clears | DIFFERENT |  |
 | C30 | hit country an unrecognised value ('Freedonia') -> no clearance | REVIEW/SAME |  |
+| C31 | Macao is its own territory: customer China only vs hit 'Macao Special Administrative Region of China' | DIFFERENT |  |
+| C32 | Scotland / Wales are the United Kingdom | REVIEW/SAME |  |
+| C33 | 'Taiwan, Province of China' is not read as a country: no clearance against China | REVIEW/SAME | yes |
+| C34 | Taiwan vs China: separate countries/territories -> location clears | DIFFERENT | yes |
 
 ## Hit fields and entity type (principle 6)
 
@@ -216,26 +225,33 @@ checks the decision for the one hit against the decisions the policy allows.
 | P05 | two records share placeholder phone '0000000000' and DOB; second is Kenyan (policy text says merge) | REVIEW/SAME | yes |
 | P06 | verified name 'XXX XXX': no name decision | REVIEW/SAME |  |
 | P07 | screened name 'TEST' only, no link | REVIEW/SAME |  |
+| P08 | placeholder phone + same DOB would import another person's later verified name -> must not clear on name | REVIEW/SAME | yes |
+| P09 | real (non-placeholder) shared phone + same DOB still merges: the duplicate's Kenya blocks a location clearance | REVIEW/SAME |  |
 
-## Notes on ambiguous cases (safe expectation chosen)
+## Decisions on the open cases (expected-cost reasoning)
 
-* **R10** No customer record fits and only the screened DOB contradicts the hit. The policy resolves the customer
-  first; whether the screened details alone may clear is not stated. Either REVIEW or a DOB clearance is accepted.
-* **K01** Two approved checks on the same day disagree on the DOB: "the most recent approved check" is not unique.
-  Never clear on one of them.
-* **K09** Two-digit years (`12/04/85`): read as 1985, day first like the bank's other slash dates.
-* **K10** A note whose own dates show month-first order (`06/25/2024`) is read month-first.
-* **T04 / T05** A DOB range or "circa 1980" in `dobs`: never treated as a contradiction.
-* **T20** The dated-report form must be a whole line ("exactly the English lines"); mid-line it is not counted,
-  so it cannot clear.
-* **N44** Trading-as names: the policy does not say whether a t/a name is a name of the company. Never clear.
-* **H03** "Organisation" for a company: not treated as a type contradiction.
-* **C02 / C03** England / Northern Ireland are parts of the United Kingdom, not territories: never clear.
-* **C22 / C28** Bare "Congo" or "Korea" fits two countries: treated as unknown (blocks a location clearance).
-* **P05** A placeholder-looking phone (`0000000000`) shared with the same full DOB: the policy text merges on
-  phone + full DOB with no exception, which here also keeps the second record's country in the picture.
+A wrong clearance costs 60; a needless review or a confirm-instead-of-review costs 2-3. So a rule is only allowed
+to clear where the policy text or the development data clearly supports it; everything else stays `REVIEW`.
+
+| Case | Behaviour | Why |
+|---|---|---|
+| R10 no customer record | never clear or confirm on screened data alone | principle 2 resolves the customer first; nothing in the policy lets declared details clear |
+| K01 two approved checks, same day | deterministic tie-break, never a DOB clearance from either alone in the test | "most recent approved check" is not unique; cost asymmetry |
+| K09 two-digit year | `85` -> 1985, `05` -> 2005 (pivot 26), day-first | the bank's slash dates are day-first throughout dev (0 month-first of ~22k) |
+| K10/K20 month-first note | unambiguous dates swapped, ambiguous ones keep only the year | the note shows its own order; an ambiguous date can then only agree on the year |
+| T04/T05/T31/T32 ranges, circa, decades | a range or decade gives every year in it; an approximate DOB can agree but never contradicts | "circa" is not a birth date that can be contradicted; no such values in dev |
+| T20 report form mid-line | not a dated report | "exactly the English lines of the form" |
+| T34 too young but hit DOB agrees | `REVIEW` | the hit's own facts contradict each other; policy-literal clearance would risk 60 for a gain of 3 |
+| N44 trading-as | never clear | the policy does not say whether a t/a name is a company name |
+| H03 "Organisation" | treated as a company | not a person; no type contradiction |
+| C02/C03/C32 England, Scotland, Wales, NI | the United Kingdom | constituent countries, not territories |
+| C04/C31/C34 Hong Kong, Macao, Taiwan; C05 Puerto Rico | their own country | principle 6: "territories count as their own country"; dev uses "Macao Special Administrative Region of China" as a distinct value |
+| C33 "Taiwan, Province of China" | unknown value, blocks a location clearance | could be read as either; unknown is the safe reading |
+| C22/C28 bare Congo / Korea | unknown in structured fields, both countries in free text | two countries fit |
+| P05/P08 placeholder phone + same DOB | decided with and without the link; `REVIEW` if the answers differ | the literal merge could import another person's verified name (P08, a 60-cost clearance); refusing it could hide a real duplicate's country (P05). Deciding both ways is safe in both directions. In dev, 123 two-record merges exist (0 on a placeholder phone) and practice labels rely on them, so real merges stay. |
 
 ## Further ideas not yet automated
+
 
 * Joint account where one holder is a company and the other a person.
 * Approved KYC note and KYC-table check on the same date with different names.
