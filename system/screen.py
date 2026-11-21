@@ -595,7 +595,8 @@ class Person:
 # ----------------------------------------------------------------------------- hit picture
 CAT_PHRASE = {"sanctions": "a sanctioned individual", "pep": "a politically exposed person", "enforcement": "the subject of enforcement action",
               "adverse media": "named in adverse media", "soe": "a state-owned enterprise official"}
-REPORT_RE = re.compile(r"According to [^\n;]{1,300}?;\s*(" + MON_RE + r"\s+\d{1,2},\s+\d{4})\s*:", re.I)
+# Dated reports: exactly lines of the form "According to ...; September 10, 2025: ..." (principle 5)
+REPORT_RE = re.compile(r"(?m)^[ \t]*According to [^\n;]{1,300}?;[ \t]*((?i:" + MON_RE + r")[ \t]+\d{1,2},[ \t]+\d{4})[ \t]*:")
 NUMWORDS = {}
 
 
@@ -885,7 +886,10 @@ class HitFacts:
         if self.dob_kind == "listed":
             return "the hit's listed date of birth%s%s" % (v, ds)
         if self.dob_kind == "notes":
-            return "the hit's profile notes put its birth year at %s" % ds if verb else "the hit's %s from its profile notes" % ds
+            full = all(d[1] for d in self.dobs)
+            if verb:
+                return ("the hit's profile notes give its date of birth as %s" if full else "the hit's profile notes put its birth year at %s") % ds
+            return "the hit's %s from its profile notes" % ds
         if self.dob_kind == "search":
             return ("the hit's search results (%s) put its birth year at %s" if verb else "the hit's %s from its search results (%s)") % (
                 (", ".join(self.dob_ev), ds) if verb else (ds, ", ".join(self.dob_ev)))

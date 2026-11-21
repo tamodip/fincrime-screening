@@ -92,8 +92,10 @@ ISO-2 codes, demonyms and territories → one canonical name).
   key–value fields such as `DOB: 6/20/1955` or `Age: 38` are not used as the hit's DOB.
 * **Provider dates** keep only what is certain: a slash date whose day/month order cannot be
   told apart (e.g. `05/06/1970`) keeps just its year; `6/20/1955` is read as 20 June.
-* **Earliest dated report:** only lines of the form `According to …; Month D, YYYY:`.
-* **Death date:** `deceased_date` (or an explicit *died on DATE* in the notes).
+* **Earliest dated report:** only lines that start with `According to …; Month D, YYYY:`
+  (case-sensitive, as the policy defines them); other wordings are ignored.
+* **Death date:** the `deceased_date` field only. Deaths mentioned in free text are ignored
+  because they are often about victims or relatives.
 
 ## Decision rules (principles 6–8)
 
@@ -111,8 +113,10 @@ Clear (`DIFFERENT_ENTITY`) only on a contradiction, in this priority order:
 month/day) → `NAME_MISMATCH_VERIFIED` (verified legal name, ≥2 real parts, agrees with none
 of the hit's names) → `LOCATION_MISMATCH` (all customer countries disjoint from all hit
 countries, never when name and DOB agree). Confirm (`SAME_ENTITY`) an individual when name
-and DOB agree (`NAME_DOB_LOCATION_MATCH` if a country is shared, else `NAME_DOB_MATCH`), a
-company when name and country agree (`NAME_LOCATION_MATCH`). If name and DOB agree but
+and DOB agree and nothing contradicts them (`NAME_DOB_LOCATION_MATCH` if a country is
+shared, `NAME_DOB_MATCH` if either side has no country); if their countries are disjoint the
+hit is `REVIEW`, because a country difference can neither clear nor be ignored. A company is
+confirmed when name and country agree (`NAME_LOCATION_MATCH`). If name and DOB agree but
 something contradicts, or nothing settles it → `REVIEW / INSUFFICIENT_DATA`. Without a
 resolved customer the system never clears or confirms on screened (declared) data.
 
@@ -154,6 +158,18 @@ and no attributable search result. Names agree (Abdlulahi ≈ Abdullahi within 2
 countries agree, nothing contradicts, but without a hit DOB the hit can be neither cleared
 nor confirmed. Evidence: `["CUS-293016", "KYC-16E55D"]`.
 
+## Tests
+
+`python3 system/tests/test_policy.py` builds tiny data folders for the rare policy cases and
+checks the decision: company incorporated after the earliest report, too young / exactly 16
+at the report, death before screening, a document-number link that adds a country, a shared
+phone that does not merge people, rejected and expired checks and a rejected KYC note
+ignored, latest approved check wins, partial dates (year vs full date, same year different
+month, one year apart), an age at a date giving two years, name+DOB agreeing with different
+countries, a single-part placeholder name, two people fitting with different decisions,
+person vs company, namesake search results with the wrong role or country, and an
+unrecognised country. All 20 pass.
+
 ## Robustness testing
 
 Besides the practice labels, we re-ran the system on a perturbed copy of `dev/` in which
@@ -173,3 +189,7 @@ person's name); both are fixed and guarded.
   demonyms). An unrecognised country value blocks location clearance rather than being
   ignored.
 * Day/month order of slash dates is read as DD/MM/YYYY, as in the bank's systems.
+* Safety guards that only ever turn a clearance into `REVIEW`: an unrecognised country value;
+  a screened country that none of the customer's records carry; a KYC-note name we could not
+  parse confidently (it is never used for `NAME_MISMATCH_VERIFIED`); name and DOB agreeing
+  while something else contradicts.
