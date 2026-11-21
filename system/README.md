@@ -169,7 +169,9 @@ month, one year apart), an age at a date giving two years, name+DOB agreeing wit
 countries, a single-part placeholder name, two people fitting with different decisions,
 person vs company, namesake search results with the wrong role or country, and an
 unrecognised country, and a support note saying "verified through the app" that must not
-replace the approved KYC check. All 21 pass.
+replace the approved KYC check, a provider "DOB:" field line that contradicts or supports the
+other hit dates (veto only), a possessive name in a KYC note ("MILLER's passport") and a
+note-parsed name that is a truncation of the record name. All 24 pass.
 
 ## Robustness testing
 
@@ -198,6 +200,12 @@ parenthesised ages); all are fixed.
   a screened country that none of the customer's records carry; a KYC-note name we could not
   parse confidently (it is never used for `NAME_MISMATCH_VERIFIED`); name and DOB agreeing
   while something else contradicts.
+* Provider field lines such as `DOB: 6/20/1955` in a hit's first paragraph are not used to
+  decide, only as a veto: if they contradict the date that would confirm the hit, or support
+  the customer while another source would clear on DOB, the hit goes to `REVIEW`.
+* A verified name parsed from a KYC note that is a strict truncation of the person's record
+  name (e.g. `MARCUS DAVID` for `Marcus David Miller`) is treated as a parsing miss and never
+  clears on `NAME_MISMATCH_VERIFIED`.
 * Input hygiene: a KYC note that says the check is pending, requested, under review,
   inconclusive, revoked or superseded is not an approved check. Placeholder document numbers
   (short, or one or two repeated characters) and phone/DOB or document values shared by more

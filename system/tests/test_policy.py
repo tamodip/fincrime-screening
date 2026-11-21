@@ -271,6 +271,49 @@ def unknown_country_blocks_location_clearance():
     return r["H-000001"]["decision"] == "REVIEW"
 
 
+@case
+def provider_dob_field_vetoes_but_never_decides():
+    # "DOB: 6/20/1955" in the first paragraph contradicts a search-result age that agrees -> REVIEW, not SAME;
+    # it supports the customer while a search-result age contradicts -> REVIEW, not a DOB clearance;
+    # alone (no other hit DOB) it is not used, so the hit stays REVIEW for lack of a DOB.
+    notes = "Name: Petrova, Anna\nDOB: 6/20/1955\nSex: F"
+    ok = True
+    for dob, snip, want in (("1955-11-19", "Anna Petrova, 55, a politically exposed person in United Kingdom, was named in March 2011.", "REVIEW"),
+                            ("1955-06-20", "Anna Petrova, 30, a politically exposed person in United Kingdom, was named in March 2011.", "REVIEW"),
+                            ("1955-11-19", None, "REVIEW"),
+                            ("1955-06-20", "Anna Petrova, 55, a politically exposed person in United Kingdom, was named in March 2011.", "SAME_ENTITY")):
+        srs = [{"result_id": "SR-000001", "query": "anna petrova", "title": "Anna Petrova - news", "snippet": snip, "source": "x"}] if snip else []
+        r = run_case([cust("CUS-000001", "Anna Petrova", dob)], [acc("ACC-000001", "CUS-000001")], [], [],
+                     [alert("A-000001", "Anna Petrova", ["H-000001"], account="ACC-000001")],
+                     [hit("H-000001", "A-000001", "Petrova, Anna", countries=["United Kingdom"], notes=notes)], search=srs)
+        ok &= r["H-000001"]["decision"] == want
+    return ok
+
+
+def _note_case(text, record_name, hit_name):
+    c = cust("CUS-000001", record_name, "1979-08-10", email="m@x.example")
+    notes = [{"note_id": "NOTE-000001", "requester_email": "m@x.example", "created_at": "2023-05-10", "channel": "kyc", "text": text}]
+    r = run_case([c], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", record_name, ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", hit_name, countries=["United Kingdom"])], notes=notes)
+    return r["H-000001"]
+
+
+@case
+def possessive_name_in_kyc_note_is_read_whole():
+    # "MARCUS DAVID MILLER's passport": the possessive must not cut the surname off (that would clear on name)
+    r = _note_case("We approved MARCUS DAVID MILLER's passport from United Kingdom through Veriff on 2023-05-10. "
+                   "The document gives August 10, 1979 as the birth date.", "Marcus David Miller", "Marcus Miller")
+    return r["decision"] == "REVIEW"
+
+
+@case
+def truncated_note_name_never_clears_on_name():
+    # a note-parsed verified name that is a strict part of the record name is treated as a parsing miss
+    r = _note_case("Veriff approved the passport of MARCUS DAVID miller (born 1979-08-10) on 2023-05-10.", "Marcus David Miller", "Marcus Miller")
+    return r["decision"] == "REVIEW"
+
+
 if __name__ == "__main__":
     import io
     import contextlib

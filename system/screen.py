@@ -472,6 +472,7 @@ def parse_kyc_note(note):
     cur = []
     for tok in re.findall(r"[^\s,;:()]+", text):
         t = tok.strip(".'\"")
+        t = re.sub(r"(?<=[A-ZÀ-ÖØ-Þ])['\u2019]s$", "", t)  # possessive: "JOHNSON's passport"
         letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ\u0100-\u024F]", "", t)
         is_caps = len(letters) >= 2 and letters == letters.upper() and letters.upper() != letters.lower() and t.upper() not in CAPS_STOP
         is_filler = bool(re.fullmatch(r"\d{1,6}|N/?A|X+|-+|\?+", t)) and t.upper() not in ("ID",)
@@ -860,6 +861,15 @@ class HitFacts:
                     self.dobs = sorted({d for d, _ in sr}, key=date_key)
                     self.dob_ev = sorted({sid for _, sid in sr})
                     self.dob_kind = "search"
+        # provider field lines such as "DOB: 6/20/1955" in the first paragraph: never used to clear or confirm,
+        # only as a veto (they block a confirmation they contradict and a DOB clearance they support)
+        self.field_dobs = []
+        if not self.company and self.dob_kind != "listed":
+            for m in re.finditer(r"(?im)^[ \t]*(?:dob|d\.o\.b\.?|date of birth|birth ?date|born)[ \t]*[:\-][ \t]*([^\n]{4,40})$",
+                                 first_paragraph(h.get("profile_notes")) or ""):
+                for _s, _e, d in find_provider_dates(m.group(1)):
+                    if d not in self.field_dobs:
+                        self.field_dobs.append(d)
         self.reports = report_dates(h)
         _dd = find_provider_dates(h.get("deceased_date")) if isinstance(h.get("deceased_date"), str) else []
         self.deceased = _dd[0][2] if _dd else None
@@ -1073,7 +1083,13 @@ def decide_person(data, alert, hf, P):
             "incorporation date" if cust_company else "date of birth", " or ".join(fmt_date(d) for d in cdobs), ", ".join(cdob_src) or "screened details",
             hf.dob_text_desc(verb=True))))
     # ---- verified name
-    if vname and P.latest.get("name_conf") and len(nm.parts(vname, cust_company)) >= (1 if cust_company else 2):
+    # guard: a note-parsed verified name that is a strict truncation of one of the person's record names
+    # (e.g. "MARCUS DAVID" for record "Marcus David Miller") is more likely a parsing miss than a legal name
+    trunc = False
+    if vname and P.latest.get("src") == "note":
+        vp = set(nm.parts(vname, cust_company))
+        trunc = any(vp < set(nm.parts(n, cust_company)) for n in P.record_names() if n)
+    if vname and not trunc and P.latest.get("name_conf") and len(nm.parts(vname, cust_company)) >= (1 if cust_company else 2):
         if not any(nm.agree(vname, hn, cust_company or hf.company) for hn in hf.names) and hf.names:
             contras.append(("NAME_MISMATCH_VERIFIED", [P.latest["id"]], "The customer's verified name is %s (%s), which does not agree with the hit's name %s." % (
                 vname, P.latest["id"], hf.names[0])))
@@ -1096,6 +1112,16 @@ def decide_person(data, alert, hf, P):
         # principle 6: a country difference does not clear a name+DOB match, but it does stop a confirmation
         agree_info["conflict"] = True
         agree_info["loc_conflict"] = (sorted(cctry), hf.countries)
+    # veto from provider "DOB:" field lines (see HitFacts.field_dobs): a contradiction between sources is for a person
+    if hf.field_dobs and cdobs:
+        f_agree = any(dob_agree(cd, fd) for cd in cdobs for fd in hf.field_dobs)
+        f_contra = all(dob_contra(cd, fd) for cd in cdobs for fd in hf.field_dobs)
+        if (d_agree and f_contra) or (d_contra_all and f_agree):
+            contras = [c for c in contras if c[0] != "DOB_MISMATCH"]
+            if not contras:
+                agree_info["conflict"] = True
+                agree_info["field_dob_conflict"] = hf.field_dobs
+                return finish([], agree_info, P, hf)
     if contras and name_agree and d_agree:
         # facts point both ways: a human decides
         contras = [c for c in contras if c[0] in ("DECEASED",)]
@@ -1136,6 +1162,9 @@ def finish(contras, agree, P, hf):
         if a.get("loc_conflict"):
             sents.append("But the customer is linked only to %s and the hit only to %s; a country difference cannot clear a name and date of birth match, so a person decides." % (
                 join_names(a["loc_conflict"][0]), join_names(a["loc_conflict"][1])))
+        elif a.get("field_dob_conflict"):
+            sents.append("But the hit's profile notes also give a date of birth of %s, which disagrees with that comparison, so a person decides." % (
+                " or ".join(fmt_date(d) for d in a["field_dob_conflict"])))
         else:
             sents.append("Name and date of birth agree but another fact conflicts, so the hit is left for a person to decide.")
         return {"decision": "REVIEW", "code": "INSUFFICIENT_DATA", "codes": ["INSUFFICIENT_DATA"], "ev": sorted(set(loc_ev + a.get("dob_ev", []))), "sent": sents}
