@@ -16,3 +16,7 @@ __pycache__/
 /POLICY.md
 /validate.py
 /output.schema.json
+# demo viewer output embeds event data
+demo/
+*.html
+!system/viewer/template.html

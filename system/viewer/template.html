@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Same Person or Not? — Deterministic Screening Resolver</title>
+<style>
+:root{--bg:#0b1220;--panel:#111a2e;--panel2:#16213a;--line:#24324f;--text:#e6ecf7;--muted:#8fa0bf;--accent:#4f8cff;--accent2:#22d3ee;
+--clear:#34d399;--same:#f87171;--review:#fbbf24;--ok:#34d399;--bad:#f87171;--unk:#64748b;--r:14px}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif}
+a{color:var(--accent2)}
+.wrap{max-width:1440px;margin:0 auto;padding:28px 32px 60px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
+h1 .q{color:var(--accent2)}
+.sub{color:var(--muted)}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.badge{border:1px solid var(--line);background:var(--panel);padding:5px 11px;border-radius:999px;font-size:12px;color:var(--text);display:inline-flex;gap:6px;align-items:center}
+.badge i{width:8px;height:8px;border-radius:50%;background:var(--accent2);display:inline-block}
+.grid{display:grid;gap:16px}
+.kpis{grid-template-columns:repeat(6,minmax(0,1fr));margin-top:22px}
+.card{background:linear-gradient(180deg,var(--panel),#0f182b);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
+.kpi .v{font-size:28px;font-weight:700;letter-spacing:-.02em}
+.kpi .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+.kpi .s{color:var(--muted);font-size:12px}
+.c-clear{color:var(--clear)}.c-same{color:var(--same)}.c-review{color:var(--review)}
+.stack{display:flex;height:14px;border-radius:999px;overflow:hidden;background:var(--panel2);margin-top:10px}
+.stack div{height:100%}
+.legend{display:flex;gap:16px;color:var(--muted);font-size:12px;margin-top:8px;flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:var(--c)}
+.row2{grid-template-columns:1.2fr 1fr 1fr;margin-top:16px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 12px;font-weight:600}
+.bars .b{display:grid;grid-template-columns:230px 1fr 48px;gap:10px;align-items:center;margin:6px 0;font-size:13px}
+.bars .t{height:10px;border-radius:6px;background:var(--panel2);overflow:hidden}
+.bars .t div{height:100%;border-radius:6px}
+.bars .n{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.prac .big{font-size:40px;font-weight:800;letter-spacing:-.03em}
+.prac .ok{color:var(--ok)}
+.demo a{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;
+text-decoration:none;color:var(--text);background:var(--panel2);cursor:pointer}
+.demo a:hover,.demo a:focus{border-color:var(--accent);outline:none}
+.toolbar{display:flex;gap:10px;align-items:center;margin:22px 0 12px;flex-wrap:wrap}
+.toolbar input,.toolbar select{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:9px 12px;font:inherit}
+.toolbar input{flex:1;min-width:260px}
+.toolbar input:focus,.toolbar select:focus{outline:2px solid var(--accent);border-color:transparent}
+.chipf{display:flex;gap:6px}
+.chipf button{background:var(--panel);border:1px solid var(--line);color:var(--muted);padding:8px 12px;border-radius:999px;cursor:pointer;font:inherit}
+.chipf button.on{color:var(--text);border-color:var(--accent);background:#14244a}
+.count{color:var(--muted);font-size:12px;margin-left:auto}
+table{width:100%;border-collapse:separate;border-spacing:0}
+.tbl{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;max-height:62vh;overflow-y:auto;background:var(--panel)}
+th{position:sticky;top:0;background:#0f1930;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);z-index:1}
+td{padding:9px 12px;border-bottom:1px solid #1b2742;vertical-align:top}
+tr.r{cursor:pointer}
+tr.r:hover td{background:#14203a}
+tr.r.sel td{background:#172a52}
+.mono{white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.p-DIFFERENT_ENTITY{background:rgba(52,211,153,.14);color:var(--clear);border:1px solid rgba(52,211,153,.35)}
+.p-SAME_ENTITY{background:rgba(248,113,113,.14);color:var(--same);border:1px solid rgba(248,113,113,.35)}
+.p-REVIEW{background:rgba(251,191,36,.14);color:var(--review);border:1px solid rgba(251,191,36,.35)}
+.code{color:var(--muted);font-size:12px}
+.reason{color:#b9c6de;font-size:12.5px;max-width:560px}
+.tick{color:var(--ok);font-weight:700}
+/* drawer */
+.shade{position:fixed;inset:0;background:rgba(3,7,18,.55);opacity:0;pointer-events:none;transition:.2s}
+.shade.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;height:100vh;width:min(1060px,96vw);background:var(--bg);border-left:1px solid var(--line);transform:translateX(102%);transition:transform .25s ease;overflow-y:auto;z-index:10;box-shadow:-30px 0 60px rgba(0,0,0,.4)}
+.drawer.on{transform:none}
+.dh{position:sticky;top:0;background:rgba(11,18,32,.96);backdrop-filter:blur(6px);padding:18px 26px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;z-index:2}
+.dh h3{margin:0;font-size:20px}
+.db{padding:20px 26px 40px}
+.x{background:none;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:6px 12px;cursor:pointer;font:inherit}
+.verdict{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.verdict .pill{font-size:14px;padding:6px 14px}
+.exp{border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-size:12.5px;color:var(--muted)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0 18px}
+.side h4{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.side .nm{font-size:18px;font-weight:700;margin-bottom:8px}
+.fact{display:grid;grid-template-columns:110px 1fr;gap:10px;padding:9px 10px;border-radius:9px;margin:6px 0;border:1px solid var(--line);background:var(--panel2)}
+.fact .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding-top:1px}
+.fact.g{border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.07)}
+.fact.rd{border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.08)}
+.fact.gy{opacity:.85}
+.fact .st{font-size:11px;font-weight:700;margin-left:6px}
+.g .st{color:var(--ok)}.rd .st{color:var(--bad)}.gy .st{color:var(--unk)}
+.src{color:var(--muted);font-size:11.5px}
+.tl{position:relative;margin:6px 0 18px;padding-left:22px}
+.tl::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.st2{position:relative;margin:0 0 12px}
+.st2::before{content:"";position:absolute;left:-20px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--panel);border:2px solid var(--accent)}
+.st2.ok::before{border-color:var(--ok)}.st2.bad::before{border-color:var(--bad)}.st2.warn::before{border-color:var(--review)}
+.st2 .t{font-weight:600}
+.st2 .d{color:#b9c6de;font-size:13px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;padding:3px 9px;border-radius:7px;background:#13254a;border:1px solid #2a4a8a;color:#cfe0ff;cursor:pointer}
+.chip:hover,.chip:focus{border-color:var(--accent2);outline:none}
+.chip.lab{background:#15302a;border-color:#2a6b57}
+pre{background:#0a1020;border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow:auto;font-size:12.5px;max-height:340px;white-space:pre-wrap;word-break:break-word}
+.sec{margin-top:18px}
+.kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:0 6px;font-size:11px;color:var(--muted)}
+footer{color:var(--muted);font-size:12px;margin-top:22px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.row2{grid-template-columns:1fr}.cmp{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1>Same Person or Not<span class="q">?</span> — Deterministic Screening Resolver</h1>
+    <div class="sub">Sanctions / PEP name-screening hits resolved against the bank's records, following the identity SOP.</div>
+    <div class="badges"><span class="badge"><i></i>Deterministic</span><span class="badge"><i style="background:#a78bfa"></i>No model</span>
+    <span class="badge"><i style="background:var(--clear)"></i>$0 API cost</span><span class="badge"><i style="background:var(--review)"></i>Python stdlib only</span>
+    <span class="badge" id="b-rt"></span></div>
+  </div>
+  <div class="sub" style="text-align:right" id="built"></div>
+</header>
+
+<section class="grid kpis" id="kpis"></section>
+<div class="card" style="margin-top:16px">
+  <h2>Decision mix</h2>
+  <div class="stack" id="stack"></div>
+  <div class="legend"><span style="--c:var(--clear)">Cleared (different entity)</span><span style="--c:var(--same)">Confirmed match</span><span style="--c:var(--review)">Sent to review</span></div>
+</div>
+
+<section class="grid row2">
+  <div class="card"><h2>Reason codes</h2><div class="bars" id="bars"></div></div>
+  <div class="card prac" id="prac"><h2>Practice labels</h2></div>
+  <div class="card demo"><h2>Demo cases</h2><div id="demo"></div>
+    <div class="sub" style="font-size:12px;margin-top:10px">Keys: <span class="kbd">/</span> search · <span class="kbd">↑</span><span class="kbd">↓</span> move · <span class="kbd">Enter</span> open · <span class="kbd">Esc</span> close</div></div>
+</section>
+
+<div class="toolbar">
+  <input id="q" placeholder="Search hit, alert, customer or listed name, reason…" aria-label="Search">
+  <div class="chipf" id="decf"></div>
+  <select id="codef" aria-label="Reason code"></select>
+  <span class="count" id="count"></span>
+</div>
+<div class="tbl"><table><thead><tr><th>Hit</th><th>Alert</th><th>Screened customer</th><th>Listed name</th><th>Decision</th><th>Reason code</th><th>Reason</th></tr></thead><tbody id="tb"></tbody></table></div>
+<footer><span>Every decision cites the record IDs that decided it. Click any row for the evidence trail.</span><span id="foot"></span></footer>
+</div>
+
+<div class="shade" id="shade"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"><div class="dh"><h3 id="dt"></h3><button class="x" id="close">Close · Esc</button></div><div class="db" id="db"></div></aside>
+
+<script id="data" type="application/json">/*__DATA__*/null</script>
+<script>
+(function(){
+const D=JSON.parse(document.getElementById('data').textContent);
+const $=s=>document.querySelector(s), esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const LBL={DIFFERENT_ENTITY:'Cleared',SAME_ENTITY:'Match',REVIEW:'Review'};
+const COL={DIFFERENT_ENTITY:'var(--clear)',SAME_ENTITY:'var(--same)',REVIEW:'var(--review)'};
+const S=D.stats, n=S.hits, pct=x=>n?Math.round(1000*x/n)/10:0;
+const dc=k=>S.dec[k]||0;
+$('#built').innerHTML='Run built '+esc(S.built)+'<br>'+S.alerts+' alerts · '+n+' hits';
+$('#b-rt').innerHTML='<i style="background:#94a3b8"></i>'+(S.runtime?('Run time '+S.runtime.toFixed(1)+' s'):'Run time n/a');
+const k=(l,v,s,c)=>'<div class="card kpi"><div class="l">'+l+'</div><div class="v '+(c||'')+'">'+v+'</div><div class="s">'+s+'</div></div>';
+$('#kpis').innerHTML=k('Hits processed',n,S.alerts+' alerts')+k('Cleared',dc('DIFFERENT_ENTITY'),pct(dc('DIFFERENT_ENTITY'))+'% · different entity','c-clear')
+ +k('Confirmed',dc('SAME_ENTITY'),pct(dc('SAME_ENTITY'))+'% · same entity','c-same')+k('To review',dc('REVIEW'),pct(dc('REVIEW'))+'% · human decides','c-review')
+ +k('Alerts fully closed',S.closed,(S.alerts?Math.round(100*S.closed/S.alerts):0)+'% of alerts, every hit cleared')
+ +k('Run time',S.runtime?S.runtime.toFixed(1)+'s':'—',S.runtime?Math.round(1000*S.runtime/n)+' ms per hit':'pass --runtime');
+$('#stack').innerHTML=['DIFFERENT_ENTITY','SAME_ENTITY','REVIEW'].map(x=>'<div title="'+LBL[x]+' '+dc(x)+'" style="width:'+pct(dc(x))+'%;background:'+COL[x]+'"></div>').join('');
+const codes=Object.entries(S.codes).sort((a,b)=>b[1]-a[1]), mx=Math.max(...codes.map(c=>c[1]));
+const codeDec={};D.preds.forEach(p=>codeDec[p.reason_code]=p.decision);
+$('#bars').innerHTML=codes.map(([c,v])=>'<div class="b"><span class="mono">'+esc(c)+'</span><div class="t"><div style="width:'+(100*v/mx)+'%;background:'+COL[codeDec[c]]+'"></div></div><span class="n">'+v+'</span></div>').join('');
+const P=S.practice;
+$('#prac').innerHTML+=P?('<div class="big ok">'+P.right+' / '+P.n+'</div><div class="sub">right decisions on labelled practice hits</div>'
+ +'<div style="display:flex;gap:22px;margin-top:14px"><div><div class="kpi"><div class="v ok">'+P.unsafe+'</div><div class="l">unsafe clearances</div></div></div>'
+ +'<div><div class="kpi"><div class="v">'+(P.score==null?'—':P.score)+'</div><div class="l">decision score</div></div></div>'
+ +'<div><div class="kpi"><div class="v">'+P.code_ok+'</div><div class="l">reason codes fit</div></div></div></div>'
+ +'<div class="sub" style="font-size:12px;margin-top:10px">Cost: wrong clearance 60, needless review 2–3. Score 0 = all review, 100 = perfect.</div>'):'<div class="sub">No practice labels in this data folder.</div>';
+$('#demo').innerHTML=D.demo.filter(d=>D.hits[d[0]]).map(d=>{const p=D.preds.find(x=>x.hit_id===d[0]);return '<a tabindex="0" data-h="'+d[0]+'"><span><b class="mono">'+d[0]+'</b> <span class="sub">'+esc(d[1])+'</span></span><span class="pill p-'+p.decision+'">'+LBL[p.decision]+'</span></a>'}).join('');
+$('#demo').addEventListener('click',e=>{const a=e.target.closest('a');if(a)openHit(a.dataset.h)});
+$('#demo').addEventListener('keydown',e=>{if(e.key==='Enter'){const a=e.target.closest('a');if(a)openHit(a.dataset.h)}});
+$('#foot').textContent='Generated offline from the run output; no network.';
+
+// ---------- table
+const rows=D.preds.map(p=>{const a=D.alerts[p.alert_id]||{},h=D.hits[p.hit_id]||{},sc=a.customer||{};
+ return {p,a,h,sc,key:(p.hit_id+' '+p.alert_id+' '+(sc.name||'')+' '+(h.name||'')+' '+(h.aliases||[]).join(' ')+' '+p.reason_code+' '+p.reason+' '+(p.customer_record_id||'')).toLowerCase()}});
+let fDec='ALL',fCode='ALL',fq='',view=[],sel=-1;
+$('#decf').innerHTML=[['ALL','All'],['DIFFERENT_ENTITY','Cleared'],['SAME_ENTITY','Match'],['REVIEW','Review']].map(([v,l])=>'<button data-v="'+v+'" class="'+(v==='ALL'?'on':'')+'">'+l+'</button>').join('');
+$('#decf').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;fDec=b.dataset.v;[...$('#decf').children].forEach(x=>x.classList.toggle('on',x===b));render()});
+$('#codef').innerHTML='<option value="ALL">All reason codes</option>'+codes.map(([c,v])=>'<option value="'+c+'">'+c+' ('+v+')</option>').join('');
+$('#codef').addEventListener('change',e=>{fCode=e.target.value;render()});
+$('#q').addEventListener('input',e=>{fq=e.target.value.trim().toLowerCase();render()});
+function render(){
+ view=rows.filter(r=>(fDec==='ALL'||r.p.decision===fDec)&&(fCode==='ALL'||r.p.reason_code===fCode)&&(!fq||fq.split(/\s+/).every(t=>r.key.includes(t))));
+ sel=-1;
+ $('#tb').innerHTML=view.map((r,i)=>'<tr class="r" data-i="'+i+'"><td class="mono">'+r.p.hit_id+(D.labels[r.p.hit_id]?(' <span class="tick" title="practice label agrees">'+(D.labels[r.p.hit_id].decision===r.p.decision?'✓':'✗')+'</span>'):'')+'</td><td class="mono">'+r.p.alert_id+'</td><td>'+esc(r.sc.name)+'</td><td>'+esc(r.h.name)+'</td><td><span class="pill p-'+r.p.decision+'">'+LBL[r.p.decision]+'</span></td><td class="code mono">'+r.p.reason_code+'</td><td class="reason">'+esc(r.p.reason.length>150?r.p.reason.slice(0,150)+'…':r.p.reason)+'</td></tr>').join('');
+ $('#count').textContent=view.length+' of '+rows.length+' hits';
+}
+$('#tb').addEventListener('click',e=>{const tr=e.target.closest('tr');if(tr){select(+tr.dataset.i);openHit(view[+tr.dataset.i].p.hit_id)}});
+function select(i){const trs=$('#tb').children;if(sel>=0&&trs[sel])trs[sel].classList.remove('sel');sel=Math.max(0,Math.min(view.length-1,i));if(trs[sel]){trs[sel].classList.add('sel');trs[sel].scrollIntoView({block:'nearest'})}}
+document.addEventListener('keydown',e=>{
+ const open=$('#drawer').classList.contains('on');
+ if(e.key==='Escape'){if(open)closeD();else{$('#q').blur()}return}
+ if(e.target.tagName==='INPUT'&&e.key!=='ArrowDown')return;
+ if(e.key==='/'&&!open){e.preventDefault();$('#q').focus();return}
+ if(e.key==='ArrowDown'||e.key==='j'){e.preventDefault();if(e.target.tagName==='INPUT')e.target.blur();select(sel+1);if(open&&view[sel])openHit(view[sel].p.hit_id)}
+ if(e.key==='ArrowUp'||e.key==='k'){e.preventDefault();select(sel-1);if(open&&view[sel])openHit(view[sel].p.hit_id)}
+ if(e.key==='Enter'&&!open&&view[sel])openHit(view[sel].p.hit_id);
+});
+
+// ---------- detail
+function closeD(){$('#drawer').classList.remove('on');$('#shade').classList.remove('on');$('#drawer').setAttribute('aria-hidden','true')}
+$('#close').onclick=closeD;$('#shade').onclick=closeD;
+function chip(id,cls){return '<span class="chip '+(cls||'')+'" tabindex="0" data-id="'+esc(id)+'">'+esc(id)+'</span>'}
+function rec(id){return D.records[id]||D.hits[id]||D.alerts[id]||null}
+function fact(k,v,st,src){const m={g:'agrees',rd:'contradicts',gy:'not compared'};return '<div class="fact '+st+'"><div class="k">'+k+'</div><div>'+v+(st?'<span class="st">'+(m[st]||'')+'</span>':'')+(src?'<div class="src">'+src+'</div>':'')+'</div></div>'}
+function openHit(hid){
+ const p=D.preds.find(x=>x.hit_id===hid); if(!p)return;
+ const t=D.trace[hid]||{}, h=D.hits[hid]||{}, a=D.alerts[p.alert_id]||{}, sc=a.customer||{}, cm=t.cmp||{}, ht=t.hit||{};
+ const lab=D.labels[hid], cx=new Set(cm.contradictions||[]), code=p.reason_code;
+ const people=t.people||[], P0=people[0], rid=p.customer_record_id;
+ const crec=(rid&&rid!=='AMBIGUOUS')?D.records[rid]:(P0?D.records[P0.rids[0]]:null);
+ $('#dt').innerHTML='<span class="mono">'+hid+'</span> <span class="sub" style="font-size:14px">· alert '+p.alert_id+'</span>';
+ let H='<div class="verdict"><span class="pill p-'+p.decision+'">'+LBL[p.decision]+' · '+p.decision+'</span><span class="mono code">'+code+'</span>';
+ if(lab)H+='<span class="exp">Practice label: <b>'+lab.decision+'</b> '+(lab.decision===p.decision?'<span class="tick">✓ agrees</span>':'<span style="color:var(--bad)">✗ differs</span>')+'</span>';
+ H+='</div><div class="card" style="margin-bottom:16px"><div style="font-size:15px">'+esc(p.reason)+'</div><div class="chips" style="margin-top:10px"><span class="sub" style="margin-right:4px">Evidence</span>'+(p.evidence.length?p.evidence.map(x=>chip(x)).join(''):'<span class="sub">none cited</span>')+'</div>'
+  +(lab&&lab.evidence&&lab.evidence.length?'<div class="chips" style="margin-top:8px"><span class="sub" style="margin-right:4px">Label cites</span>'+lab.evidence.map(x=>chip(x,'lab')).join('')+'</div>':'')+'</div>';
+ // comparison
+ const custName=cm.verified_name||(crec&&crec.full_name)||sc.name||'—';
+ const nameSt=cm.name_agree?'g':(cx.has('NAME_MISMATCH_VERIFIED')?'rd':'gy');
+ const dobSt=cm.dob_pair?'g':(cx.has('DOB_MISMATCH')||cm.dob_contradicted?'rd':'gy');
+ const ctryC=cm.cust_countries||{}, shared=new Set(cm.shared||[]);
+ const ctrySt=shared.size?'g':(cx.has('LOCATION_MISMATCH')?'rd':'gy');
+ const ctype=(crec&&crec.entity_type)||sc.entity_type||'—', htype=h.entity_type||'—';
+ const typeSt=code==='ENTITY_TYPE_MISMATCH'?'rd':(ctype!=='—'&&htype!=='—'?'g':'gy');
+ const timeSt=(code==='TEMPORAL_IMPOSSIBILITY'||code==='DECEASED'||cx.has('TEMPORAL_IMPOSSIBILITY')||cx.has('DECEASED'))?'rd':((cm.cust_dobs||[]).length?'g':'gy');
+ const cList=Object.keys(ctryC).map(c=>(shared.has(c)?'<b>'+esc(c)+'</b>':esc(c))+' <span class="src">('+ctryC[c].join(', ')+')</span>').join('<br>')||'—';
+ const hList=(ht.countries||h.countries||[]).map(c=>shared.has(c)?'<b>'+esc(c)+'</b>':esc(c)).join(', ')||'—';
+ const cd=(cm.cust_dobs||[]).join(' or ')||(crec&&crec.dob)||sc.dob||'—';
+ const hd=(ht.dobs||[]).join(', ')||'—';
+ const hdSrc={listed:'dobs field',notes:'profile notes, first paragraph',search:'search results '+(ht.dob_ev||[]).join(', ')}[ht.dob_kind]||'no date of birth found';
+ const tc=[]; if((ht.reports||[]).length)tc.push('earliest dated report '+ht.reports[0]); if(ht.deceased)tc.push('died '+ht.deceased);
+ H+='<div class="cmp"><div class="card side"><h4>Customer (resolved)</h4><div class="nm">'+esc(custName)+'</div>'
+  +fact('Name',esc(cm.name_pair?cm.name_pair[0]:custName),nameSt,cm.verified_src?'verified legal name · '+cm.verified_src:'record / screened name')
+  +fact('Date of birth',esc(cd),dobSt,(cm.cust_dob_src||[]).join(', ')||'screened details')
+  +fact('Countries',cList,ctrySt,(cm.unknown_countries||[]).length?'unrecognised: '+esc(cm.unknown_countries.join(', ')):'')
+  +fact('Type',esc(ctype),typeSt,'')
+  +fact('Record',rid?chip(rid):'<span class="sub">none resolved</span>','',people.length>1?people.length+' people fit':(P0&&P0.rids.length>1?'one person, records '+P0.rids.join(', '):''))
+  +'</div><div class="card side"><h4>Watchlist hit</h4><div class="nm">'+esc(h.name)+'</div>'
+  +fact('Names',esc((ht.names||[h.name]).slice(0,6).join(' · ')),nameSt,cm.name_pair?'agrees with '+esc(cm.name_pair[1]):((h.aliases||[]).length+' aliases'))
+  +fact('Date of birth',esc(hd),dobSt,hdSrc+(ht.field_dobs&&ht.field_dobs.length?' · provider line '+ht.field_dobs.join(', ')+' (veto only)':''))
+  +fact('Countries',hList,ctrySt,(ht.unknown_countries||[]).length?'unrecognised: '+esc(ht.unknown_countries.join(', ')):'')
+  +fact('Type',esc(htype),typeSt,esc((h.categories||[]).join(', ')))
+  +fact('Time',esc(tc.join(' · ')||'—'),tc.length?timeSt:'gy','')
+  +'</div></div>';
+ // timeline
+ const steps=[];
+ const link=[a.account_ref?'account '+a.account_ref:null,a.login_handle?'login '+a.login_handle:null,a.email?'email '+a.email:null].filter(Boolean);
+ steps.push(['','Alert screened '+esc(a.screened_at||''),esc(sc.name)+(sc.dob?' · DOB '+esc(sc.dob):'')+(sc.country?' · '+esc(sc.country):'')+' · '+esc(sc.entity_type||'')+'<div class="chips" style="margin-top:4px">'+chip(p.alert_id)+chip(hid)+'</div>']);
+ steps.push([link.length?'ok':'warn','Link followed',(link.length?esc(link.join(' · ')):'no link on the alert: search by screened name, DOB, country, city')+'<div class="d">'+(t.path||[]).map(esc).join('<br>')+'</div>']);
+ if(people.length){people.forEach((P,i)=>steps.push(['ok',(people.length>1?'Person '+(i+1)+': c':'C')+'ustomer record'+(P.rids.length>1?'s (one person: same phone + DOB or document)':''),'<div class="chips">'+P.rids.map(r=>chip(r)).join('')+'</div>']))}
+ else steps.push(['warn','Customer record','none resolved']);
+ const ob=D.onboarding.filter(o=>people.some(P=>P.rids.includes(o.customer_id)));
+ if(ob.length)steps.push(['ok','Onboarding → KYC applicant',ob.map(o=>esc(o.account_id+' → '+o.kyc_applicant_id)).join(' · ')]);
+ const checks=[].concat(...people.map(P=>P.checks||[]));
+ if(checks.length)steps.push(['ok','Identity checks','<div class="chips">'+checks.map(c=>'<span title="'+esc((c.name||'')+' '+(c.dob||''))+'">'+chip(c.id,c.approved?'':'')+'</span> <span class="src">'+(c.approved?'approved':'not approved')+(c.date?' '+c.date:'')+(P0&&c.id===P0.latest?' · <b style="color:var(--ok)">latest approved</b>':'')+'</span>').join('<br>')+'</div>']);
+ else steps.push(['warn','Identity checks','no approved check found: record details only']);
+ steps.push([ht.dob_kind?'ok':'warn','Hit facts gathered',(ht.dob_kind?'DOB from '+esc(hdSrc):'no date of birth for the hit in its dobs field, profile notes or matching search results')+' · countries '+esc(hList.replace(/<[^>]+>/g,''))+((ht.dob_ev||[]).length?'<div class="chips" style="margin-top:4px">'+ht.dob_ev.map(x=>chip(x)).join('')+'</div>':'')]);
+ const fired=(t.codes||[code]);
+ steps.push([p.decision==='DIFFERENT_ENTITY'?'ok':(p.decision==='REVIEW'?'warn':'bad'),'Rule fired',esc(fired.join(' + '))+(cx.size?'<div class="d">contradictions found: '+esc([...cx].join(', '))+'</div>':'')]);
+ steps.push([p.decision==='DIFFERENT_ENTITY'?'ok':(p.decision==='REVIEW'?'warn':'bad'),'Decision','<span class="pill p-'+p.decision+'">'+p.decision+'</span> <span class="mono code">'+code+'</span>']);
+ H+='<h2>Resolution path</h2><div class="tl">'+steps.map(s=>'<div class="st2 '+s[0]+'"><div class="t">'+s[1]+'</div><div class="d">'+s[2]+'</div></div>').join('')+'</div>';
+ H+='<div class="sec"><h2>Raw record</h2><pre id="raw">Click any ID chip to see the record exactly as it is in the files.</pre></div>';
+ $('#db').innerHTML=H; $('#drawer').classList.add('on'); $('#shade').classList.add('on'); $('#drawer').setAttribute('aria-hidden','false'); $('#drawer').scrollTop=0;
+}
+function showRaw(id){const r=rec(id);const el=$('#raw');if(!el)return;el.textContent=r?(id+'\n'+JSON.stringify(r,null,2)):(id+': not embedded in this page');el.scrollIntoView({block:'nearest',behavior:'smooth'})}
+$('#db').addEventListener('click',e=>{const c=e.target.closest('.chip');if(c)showRaw(c.dataset.id)});
+$('#db').addEventListener('keydown',e=>{if(e.key==='Enter'){const c=e.target.closest('.chip');if(c)showRaw(c.dataset.id)}});
+render();
+const hh=(location.hash||'').slice(1).split('/'); if(hh[0]&&D.hits[hh[0]]){openHit(hh[0]);if(hh[1])showRaw(hh[1])}
+})();
+</script>
+</body>
+</html>

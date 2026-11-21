@@ -183,6 +183,36 @@ The catalogue, with the policy reasoning and the cases the policy leaves open, i
 `system/tests/EDGE_CASES.md`. All pass. It can run several systems side by side:
 `python3 system/tests/edge_cases.py system/run other/system/run`.
 
+## Demo viewer
+
+```
+system/demo.sh dev            # run (timed, with engine trace) -> validate --score -> build viewer -> open
+```
+
+or by hand:
+
+```
+SCREEN_TRACE=demo/trace.jsonl system/run dev demo/predictions.jsonl
+python3 system/viewer/build_viewer.py dev demo/predictions.jsonl demo/index.html --trace demo/trace.jsonl --runtime 15.8
+```
+
+`demo/index.html` is one self-contained offline page (inline CSS/JS, no network, about 4.6 MB for dev).
+It shows the run's headline numbers (hits, cleared / confirmed / review with a stacked bar, alerts
+fully closed, run time, practice score and unsafe count), the reason-code mix, a searchable and
+filterable table of every hit (keyboard: `/` search, arrows move, Enter open, Esc close), and for each
+hit a side-by-side *customer vs watchlist hit* comparison with agreeing facts in green, contradicting
+facts in red and uncompared facts in grey, the resolution path as a timeline (alert, link, customer
+records, onboarding, identity checks, hit facts, rule fired, decision), and the cited evidence as
+chips that open the raw record. Practice-labelled hits show the expected answer. A deep link
+`index.html#H-58A39C/KYC-232AE0` opens a hit and a record directly.
+
+The facts in the comparison come from the engine itself: with `SCREEN_TRACE=<file>` set, `screen.py`
+also writes what it compared for every hit (resolved people, checks, verified name, DOBs and their
+sources, countries, contradictions). The trace never changes a decision: the output file is
+byte-identical with and without it. The page embeds only the records it needs (hits, alerts,
+resolved customers and their checks, cited notes and search results: about 2,600 records), and
+because that is event data it is git-ignored (`demo/`, `*.html`); only the generator is committed.
+
 ## Robustness testing
 
 `python3 system/tests/paraphrase_check.py dev /tmp/para` rewrites the free text of the data
