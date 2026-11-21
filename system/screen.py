@@ -434,7 +434,7 @@ def titlecase_name(text):
 
 def parse_kyc_note(note):
     text = note.get("text") or ""
-    if note.get("channel") != "kyc" and not re.search(r"\b(passport|national id|id card|identity card|driving licen[cs]e|driver'?s licen[cs]e|residence permit|identity document|registry extract|identity|verification|verified)\b", text, re.I):
+    if note.get("channel") != "kyc" and not re.search(r"\b(passport|national id|id card|identity card|driving licen[cs]e|driver'?s licen[cs]e|residence permit|identity document|registry extract|travel document|identity card)\b", text, re.I):
         return None
     if note.get("channel") != "kyc" and not VERIFY_RE.search(text):
         return None
@@ -490,6 +490,8 @@ def parse_kyc_note(note):
     if not name:
         name, name_conf = titlecase_name(text)
     ctry = CT.find_in_text(text)
+    if not name and not dob:
+        return None  # not an identity check record (e.g. "verified through the app")
     return {"id": note["note_id"], "src": "note", "name": name, "name_conf": name_conf, "dob": dob, "country": ctry[0] if ctry else None,
             "approved": approved, "date": checked, "text": text}
 

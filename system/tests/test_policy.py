@@ -169,6 +169,19 @@ def rejected_kyc_note_is_ignored():
 
 
 @case
+def support_note_saying_verified_is_not_an_identity_check():
+    # a later support note "verified through the app" must not replace the approved KYC check
+    c = cust("CUS-000001", "Peter Brown", "1953-01-03", email="pb@x.example")
+    notes = [{"note_id": "NOTE-000001", "requester_email": "pb@x.example", "created_at": "2026-01-01", "channel": "email",
+              "text": "Customer updated their mobile number after changing provider. Verified through the app."}]
+    r = run_case([c], [acc("ACC-000001", "CUS-000001")], [onb("ACC-000001", "CUS-000001", "APP-000001")],
+                 [kyc("KYC-000001", "APP-000001", "Peter Brown", "1959-05-12", date="2025-01-01")],
+                 [alert("A-000001", "Peter Brown", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Brown, Peter", countries=["United Kingdom"], dobs=["1959"])], notes=notes)
+    return r["H-000001"]["decision"] == "SAME_ENTITY" and "KYC-000001" in r["H-000001"]["evidence"]
+
+
+@case
 def year_only_agrees_with_full_date():
     r = run_case([cust("CUS-000001", "Li Wei", "1975")], [acc("ACC-000001", "CUS-000001")], [], [],
                  [alert("A-000001", "Li Wei", ["H-000001"], account="ACC-000001")],

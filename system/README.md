@@ -168,7 +168,8 @@ ignored, latest approved check wins, partial dates (year vs full date, same year
 month, one year apart), an age at a date giving two years, name+DOB agreeing with different
 countries, a single-part placeholder name, two people fitting with different decisions,
 person vs company, namesake search results with the wrong role or country, and an
-unrecognised country. All 20 pass.
+unrecognised country, and a support note saying "verified through the app" that must not
+replace the approved KYC check. All 21 pass.
 
 ## Robustness testing
 
