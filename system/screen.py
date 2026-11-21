@@ -657,6 +657,7 @@ AGE_PATTERNS = [
     r"\b(\d{1,3})\s+years?\s+of\s+age\b", r"\bage\s+(\d{1,3})\b", r"\b(?:was|is|turned|reached)\s+(\d{1,3})\b(?!\s*(?:%|percent|million|billion|thousand|people|times|counts?|years in|months|days))",
     r"\bat\s+(\d{1,3}),", r",\s*(\d{1,3}),", r"^\s*(\d{1,3}),", r"\bthen\s+(\d{1,3})\b", r"\ba\s+(\d{1,3})\s*,",
     r"\bat\s+(\d{1,3})\s*[.;]", r",\s*(\d{1,3})\s+and\b", r",\s*(\d{1,3})\s*\.\s",
+    r"\((?:aged?\s*|age:?\s*)?(\d{1,3})(?:\s*(?:years?(?:\s+old)?|yrs?\.?|y/o))?\)", r"\b(\d{1,3})\s*(?:yrs?\.?|y/o)\b",
 ]
 
 
@@ -693,6 +694,18 @@ def first_paragraph(notes):
     return re.split(r"\n\s*\n", notes.strip())[0]
 
 
+def split_sentences(text):
+    """Sentence split that does not break after initials (Mark E. Phillips) or common abbreviations."""
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z\u00C0-\u024F])", text)
+    out = []
+    for p in parts:
+        if out and re.search(r"(?:^|[\s(])(?:[A-Z]|Mr|Mrs|Ms|Dr|St|Jr|Sr|No|Mt|Gen|Col|Lt|Rev|Prof|U\.S|Inc|Co|Ltd)\.$", out[-1]):
+            out[-1] = out[-1] + " " + p
+        else:
+            out.append(p)
+    return out
+
+
 def hit_dobs_from_notes(h):
     """Principle 5: a sentence in the first paragraph of the profile notes."""
     fp = first_paragraph(h.get("profile_notes"))
@@ -700,7 +713,7 @@ def hit_dobs_from_notes(h):
         # first paragraph is a dated report: can still carry no DOB statement
         pass
     out = []
-    for sent in re.split(r"(?<=[.!?])\s+(?=[A-Z])", fp):
+    for sent in split_sentences(fp):
         if re.match(r"\s*According to", sent):
             continue
         # only narrative birth statements count; raw provider fields such as "DOB: 6/20/1955" inside

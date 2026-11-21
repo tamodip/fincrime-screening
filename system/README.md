@@ -172,12 +172,16 @@ unrecognised country. All 20 pass.
 
 ## Robustness testing
 
-Besides the practice labels, we re-ran the system on a perturbed copy of `dev/` in which
-every KYC note was rewritten with new templates (four sentence shapes, five date formats,
-30% of names in Title case instead of capitals) and profile-note age phrases were reworded.
-All 819 decisions stayed identical. Earlier iterations of this test exposed bugs that would
-have caused unsafe clearances (a check date read as the birth date; "United States" read as a
-person's name); both are fixed and guarded.
+`python3 system/tests/paraphrase_check.py dev /tmp/para` rewrites the free text of the data
+folder while keeping every fact: KYC notes in four new sentence shapes with five date
+formats and 30% Title-case names, residence notes reworded, every search snippet rebuilt in
+three new shapes (name/age/role/country/month in different orders, "(37)", "aged 37",
+"the 37-year-old"), and profile-note age sentences replaced with new templates ("X (37) was
+questioned in May 1999", "then 37 years of age", "at the age of 37"). It then reruns the
+system: **0 of 819 decisions change**. Earlier rounds of this test exposed bugs that would have
+caused unsafe clearances or missed facts (a check date read as the birth date; "United States"
+read as a person's name; sentence splitting after an initial such as "Mark E. Phillips";
+parenthesised ages); all are fixed.
 
 ## Honest limitations
 
