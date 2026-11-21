@@ -162,17 +162,30 @@ nor confirmed. Evidence: `["CUS-293016", "KYC-16E55D"]`.
 ## Tests
 
 `python3 system/tests/test_policy.py` builds tiny data folders for the rare policy cases and
-checks the decision: company incorporated after the earliest report, too young / exactly 16
-at the report, death before screening, a document-number link that adds a country, a shared
-phone that does not merge people, rejected and expired checks and a rejected KYC note
-ignored, latest approved check wins, partial dates (year vs full date, same year different
-month, one year apart), an age at a date giving two years, name+DOB agreeing with different
-countries, a single-part placeholder name, two people fitting with different decisions,
-person vs company, namesake search results with the wrong role or country, and an
-unrecognised country, and a support note saying "verified through the app" that must not
-replace the approved KYC check, a provider "DOB:" field line that contradicts or supports the
-other hit dates (veto only), a possessive name in a KYC note ("MILLER's passport") and a
-note-parsed name that is a truncation of the record name. All 24 pass.
+checks the decision. The suite covers every clearance ground both firing and correctly not
+firing (missing data never counts as a mismatch): entity type, a death date before screening
+(and not on or after it), temporal impossibility (too young, incorporated after a report, not
+at exactly 16, not when the report wording is informal or absent, not when a company was
+already incorporated), date of birth (two years apart, same year different month or day; a
+year-only date can agree; one year apart is not a mismatch; a missing DOB is not a mismatch),
+a verified name mismatch (and a declared name alone cannot clear on name), and location
+(including that International/Europe are not countries, that place of birth counts as a hit
+country, and that a name+DOB agreement stops a location clearance). It also checks the
+clearance precedence (ENTITY_TYPE, DECEASED, TEMPORAL, DOB, NAME_MISMATCH_VERIFIED, LOCATION),
+SAME_ENTITY reason codes (NAME_DOB_LOCATION_MATCH, NAME_DOB_MATCH, NAME_LOCATION_MATCH for
+companies; name without a DOB is REVIEW), REVIEW reasons (INSUFFICIENT_DATA and
+AMBIGUOUS_CUSTOMER_RECORD), verified-beats-declared (latest approved check wins; rejected,
+expired and pending checks and a rejected KYC note are ignored; the verified legal name
+outranks the record name; a support note saying "verified through the app" is not a check),
+customer resolution through an account, login handle or email, merges on phone plus a full
+DOB and on an approved document number, a shared phone or a year-only DOB not merging,
+AMBIGUOUS when more than one person fits (different decisions, or the same decision with
+`customer_record_id` still AMBIGUOUS), and output field rules (`customer_record_id` is an id,
+AMBIGUOUS or null; a reason code belongs to its decision; evidence ids exist; an unresolved
+customer is never cleared except on type). It also covers an age at a date giving two years,
+namesake search results with the wrong role or country, a provider "DOB:" field line that can
+only veto, a possessive name in a KYC note ("MILLER's passport") and a note-parsed name that
+is a truncation of the record name. All 60 pass.
 
 ## Adversarial edge cases
 

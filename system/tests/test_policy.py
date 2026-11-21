@@ -22,18 +22,18 @@ def cust(rid, name, dob, nat="United Kingdom", res="GB", email=None, phone="+44 
             "registration_number": None, "onboarded_at": "2020-01-01", "status": "active", "last_kyc_refresh": None}
 
 
-def hit(hid, aid, name, etype="Individual", dobs=(), countries=(), notes=None, deceased=None, cats=("PEP",), aliases=()):
+def hit(hid, aid, name, etype="Individual", dobs=(), countries=(), notes=None, deceased=None, cats=("PEP",), aliases=(), pob=None, nationality=(), citizenship=(), addresses=()):
     return {"hit_id": hid, "alert_id": aid, "match_score": 100, "entity_type": etype, "name": name, "first_name": None,
             "middle_name": None, "last_name": None, "best_matching_name": None, "aliases": list(aliases), "gender": None,
-            "dobs": list(dobs), "place_of_birth": None, "life_status": None, "deceased_date": deceased, "nationality": [],
-            "citizenship": [], "countries": list(countries), "addresses": [], "identifiers": [], "categories": list(cats),
+            "dobs": list(dobs), "place_of_birth": pob, "life_status": None, "deceased_date": deceased, "nationality": list(nationality),
+            "citizenship": list(citizenship), "countries": list(countries), "addresses": list(addresses), "identifiers": [], "categories": list(cats),
             "primary_category": None, "subcategories": [], "position_or_allegation": None, "details": {}, "relationships": [],
             "profile_notes": notes, "sources": [], "source_urls": []}
 
 
-def alert(aid, name, hit_ids, dob=None, account=None, etype="Individual", country=None):
+def alert(aid, name, hit_ids, dob=None, account=None, etype="Individual", country=None, login=None, email=None):
     return {"alert_id": aid, "screened_at": "2026-11-10", "customer": {"name": name, "entity_type": etype, "dob": dob,
-            "country": country, "city": None}, "account_ref": account, "login_handle": None, "email": None, "hit_ids": hit_ids}
+            "country": country, "city": None}, "account_ref": account, "login_handle": login, "email": email, "hit_ids": hit_ids}
 
 
 def kyc(cid, app, name, dob, country="United Kingdom", result="approved", date="2024-01-01", doc="P1"):
@@ -57,8 +57,8 @@ def run_case(customers, accounts, onboarding, kycs, alerts, hits, notes=(), sear
         shutil.rmtree(d)
 
 
-def acc(aid, cid):
-    return {"account_id": aid, "customer_id": cid, "login_handle": None, "phone": None, "opened_at": "2020-01-01", "status": "active"}
+def acc(aid, cid, login=None):
+    return {"account_id": aid, "customer_id": cid, "login_handle": login, "phone": None, "opened_at": "2020-01-01", "status": "active"}
 
 
 def onb(aid, cid, app):
@@ -312,6 +312,369 @@ def truncated_note_name_never_clears_on_name():
     # a note-parsed verified name that is a strict part of the record name is treated as a parsing miss
     r = _note_case("Veriff approved the passport of MARCUS DAVID miller (born 1979-08-10) on 2023-05-10.", "Marcus David Miller", "Marcus Miller")
     return r["decision"] == "REVIEW"
+
+
+BELONGS = {
+    "DIFFERENT_ENTITY": {"TEMPORAL_IMPOSSIBILITY", "DOB_MISMATCH", "LOCATION_MISMATCH", "NAME_MISMATCH_VERIFIED", "ENTITY_TYPE_MISMATCH", "DECEASED"},
+    "SAME_ENTITY": {"NAME_DOB_LOCATION_MATCH", "NAME_DOB_MATCH", "NAME_LOCATION_MATCH"},
+    "REVIEW": {"INSUFFICIENT_DATA", "AMBIGUOUS_CUSTOMER_RECORD"},
+}
+
+
+def _code_ok(row):
+    return row["reason_code"] in BELONGS.get(row["decision"], ())
+
+
+@case
+def entity_type_not_fired_when_both_individuals():
+    # matching types are never a type clearance; name + DOB + country confirm as usual
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], dobs=["1984-07-07"])])
+    x = r["H-000001"]
+    return x["decision"] == "SAME_ENTITY" and x["reason_code"] != "ENTITY_TYPE_MISMATCH" and _code_ok(x)
+
+
+@case
+def missing_hit_entity_type_is_not_a_type_mismatch():
+    # missing data never counts as a mismatch: a hit with no type cannot be cleared on type
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", etype=None, countries=["United Kingdom"], dobs=["1984-07-07"])])
+    return r["H-000001"]["reason_code"] != "ENTITY_TYPE_MISMATCH" and r["H-000001"]["decision"] in ("SAME_ENTITY", "REVIEW")
+
+
+@case
+def death_after_screening_is_not_deceased():
+    r = run_case([cust("CUS-000001", "Fiona Ward", None)], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], deceased="2026-12-01")])
+    return r["H-000001"]["reason_code"] != "DECEASED" and r["H-000001"]["decision"] == "REVIEW"
+
+
+@case
+def death_on_screening_day_is_not_deceased():
+    # a death date equal to the screening date is not "before the customer was screened"
+    r = run_case([cust("CUS-000001", "Fiona Ward", None)], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], deceased="2026-11-10")])
+    return r["H-000001"]["reason_code"] != "DECEASED" and r["H-000001"]["decision"] == "REVIEW"
+
+
+@case
+def missing_dob_is_never_a_dob_mismatch():
+    ok = True
+    # customer has no DOB, hit has one
+    r = run_case([cust("CUS-000001", "Fiona Ward", None)], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], dobs=["1984-07-07"])])
+    ok &= r["H-000001"]["reason_code"] != "DOB_MISMATCH" and r["H-000001"]["decision"] == "REVIEW"
+    # customer has a DOB, hit gives none
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"])])
+    ok &= r["H-000001"]["reason_code"] != "DOB_MISMATCH" and r["H-000001"]["decision"] == "REVIEW"
+    return ok
+
+
+@case
+def two_years_apart_is_dob_mismatch():
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], dobs=["1982"])])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "DOB_MISMATCH"
+
+
+@case
+def same_year_different_day_is_dob_mismatch():
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], dobs=["1984-07-19"])])
+    return r["H-000001"]["reason_code"] == "DOB_MISMATCH"
+
+
+@case
+def name_mismatch_verified_fires_when_legal_name_disagrees():
+    r = run_case([cust("CUS-000001", "Victor Hale", None)], [acc("ACC-000001", "CUS-000001")], [onb("ACC-000001", "CUS-000001", "APP-000001")],
+                 [kyc("KYC-000001", "APP-000001", "Victor Hale", None)],
+                 [alert("A-000001", "Victor Hale", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Chen, Wei", countries=["United Kingdom"])])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "NAME_MISMATCH_VERIFIED"
+
+
+@case
+def declared_name_alone_cannot_clear_on_name():
+    # without a verified legal name, a disagreement between the record name and the hit is not NAME_MISMATCH_VERIFIED
+    r = run_case([cust("CUS-000001", "Victor Hale", None)], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Victor Hale", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Chen, Wei", countries=["United Kingdom"])])
+    return r["H-000001"]["decision"] == "REVIEW" and r["H-000001"]["reason_code"] != "NAME_MISMATCH_VERIFIED"
+
+
+@case
+def location_mismatch_fires_when_name_and_dob_do_not_both_agree():
+    # countries differ and there is no agreeing DOB, so location may clear
+    r = run_case([cust("CUS-000001", "Fiona Ward", None, nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["Kenya"])])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "LOCATION_MISMATCH"
+
+
+@case
+def missing_country_is_never_a_location_mismatch():
+    ok = True
+    r = run_case([cust("CUS-000001", "Fiona Ward", None, nat=None, res=None)], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["Kenya"])])
+    ok &= r["H-000001"]["reason_code"] != "LOCATION_MISMATCH" and r["H-000001"]["decision"] == "REVIEW"
+    r = run_case([cust("CUS-000001", "Fiona Ward", None, nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona")])
+    ok &= r["H-000001"]["reason_code"] != "LOCATION_MISMATCH" and r["H-000001"]["decision"] == "REVIEW"
+    return ok
+
+
+@case
+def international_and_europe_are_not_countries():
+    # "International" and "Europe" are not countries, so they cannot support a location clearance
+    r = run_case([cust("CUS-000001", "Fiona Ward", None)], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["International", "Europe"])])
+    return r["H-000001"]["reason_code"] != "LOCATION_MISMATCH" and r["H-000001"]["decision"] == "REVIEW"
+
+
+@case
+def place_of_birth_counts_as_a_hit_country():
+    # a hit country may come only from place of birth; that overlap blocks a location clearance
+    r = run_case([cust("CUS-000001", "Fiona Ward", None, nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=(), pob="London, United Kingdom")])
+    return r["H-000001"]["decision"] != "DIFFERENT_ENTITY"
+
+
+@case
+def precedence_entity_type_over_other_clearances():
+    # person vs company, plus a death date, a young-customer report, a DOB clash and a country clash: type wins
+    r = run_case([cust("CUS-000001", "Nora Blake", "2004-02-02", nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Nora Blake", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Blake Holdings Ltd", etype="Company", countries=["Kenya"], dobs=["1960"],
+                      deceased="2020-01-01", notes="According to bbc.co.uk; June 1, 2011: Nora Blake was charged.")])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "ENTITY_TYPE_MISMATCH"
+
+
+@case
+def precedence_deceased_over_other_clearances():
+    r = run_case([cust("CUS-000001", "Nora Blake", "2004-02-02", nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")],
+                 [onb("ACC-000001", "CUS-000001", "APP-000001")], [kyc("KYC-000001", "APP-000001", "Nora Blake", "2004-02-02")],
+                 [alert("A-000001", "Nora Blake", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Chen, Wei", countries=["Kenya"], dobs=["1960"], deceased="2020-01-01",
+                      notes="According to bbc.co.uk; June 1, 2011: Wei Chen was charged.")])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "DECEASED"
+
+
+@case
+def precedence_temporal_over_dob_name_and_location():
+    r = run_case([cust("CUS-000001", "Nora Blake", "2004-02-02", nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")],
+                 [onb("ACC-000001", "CUS-000001", "APP-000001")], [kyc("KYC-000001", "APP-000001", "Nora Blake", "2004-02-02")],
+                 [alert("A-000001", "Nora Blake", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Chen, Wei", countries=["Kenya"], dobs=["1960"],
+                      notes="According to bbc.co.uk; June 1, 2011: Wei Chen was charged.")])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "TEMPORAL_IMPOSSIBILITY"
+
+
+@case
+def precedence_dob_over_name_and_location():
+    r = run_case([cust("CUS-000001", "Nora Blake", "2004-02-02", nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")],
+                 [onb("ACC-000001", "CUS-000001", "APP-000001")], [kyc("KYC-000001", "APP-000001", "Nora Blake", "2004-02-02")],
+                 [alert("A-000001", "Nora Blake", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Chen, Wei", countries=["Kenya"], dobs=["1960"])])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "DOB_MISMATCH"
+
+
+@case
+def precedence_name_over_location():
+    r = run_case([cust("CUS-000001", "Nora Blake", None, nat="United Kingdom", res="GB")], [acc("ACC-000001", "CUS-000001")],
+                 [onb("ACC-000001", "CUS-000001", "APP-000001")], [kyc("KYC-000001", "APP-000001", "Nora Blake", None)],
+                 [alert("A-000001", "Nora Blake", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Chen, Wei", countries=["Kenya"])])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "NAME_MISMATCH_VERIFIED"
+
+
+@case
+def name_dob_location_match_reason_code():
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], dobs=["1984-07-07"])])
+    x = r["H-000001"]
+    return x["decision"] == "SAME_ENTITY" and x["reason_code"] == "NAME_DOB_LOCATION_MATCH" and x["customer_record_id"] == "CUS-000001"
+
+
+@case
+def name_dob_match_reason_code_when_no_shared_country():
+    # name and DOB agree; the hit gives no country, so the confirmation is NAME_DOB_MATCH
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", dobs=["1984-07-07"])])
+    return r["H-000001"]["decision"] == "SAME_ENTITY" and r["H-000001"]["reason_code"] == "NAME_DOB_MATCH"
+
+
+@case
+def company_name_and_country_confirm():
+    r = run_case([cust("CUS-000001", "Northwind Trading Ltd", "2010-03-01", etype="Company")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Northwind Trading Ltd", ["H-000001"], account="ACC-000001", etype="Company")],
+                 [hit("H-000001", "A-000001", "Northwind Trading Limited", etype="Company", countries=["United Kingdom"])])
+    return r["H-000001"]["decision"] == "SAME_ENTITY" and r["H-000001"]["reason_code"] == "NAME_LOCATION_MATCH"
+
+
+@case
+def name_agreement_without_dob_is_review():
+    # a person is confirmed only when name and date of birth both agree
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"])])
+    return r["H-000001"]["decision"] == "REVIEW" and r["H-000001"]["reason_code"] == "INSUFFICIENT_DATA"
+
+
+@case
+def insufficient_data_when_nothing_settles():
+    r = run_case([cust("CUS-000001", "Fiona Ward", None)], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"])])
+    x = r["H-000001"]
+    return x["decision"] == "REVIEW" and x["reason_code"] == "INSUFFICIENT_DATA" and _code_ok(x)
+
+
+@case
+def pending_check_is_ignored():
+    # a later pending check's name and DOB must not be used
+    r = run_case([cust("CUS-000001", "Owen Park", None)], [acc("ACC-000001", "CUS-000001")], [onb("ACC-000001", "CUS-000001", "APP-000001")],
+                 [kyc("KYC-000001", "APP-000001", "Simon Green", "1990-01-01", result="pending", date="2025-01-01")],
+                 [alert("A-000001", "Owen Park", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Park, Owen", countries=["United Kingdom"], dobs=["1960"])])
+    return r["H-000001"]["decision"] == "REVIEW"
+
+
+@case
+def verified_legal_name_outranks_record_name():
+    # the record name agrees with the hit, but the latest approved legal name does not -> name clearance
+    r = run_case([cust("CUS-000001", "Victor Hale", None)], [acc("ACC-000001", "CUS-000001")], [onb("ACC-000001", "CUS-000001", "APP-000001")],
+                 [kyc("KYC-000001", "APP-000001", "Robert Lang", None)],
+                 [alert("A-000001", "Victor Hale", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Hale, Victor", countries=["United Kingdom"])])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "NAME_MISMATCH_VERIFIED"
+
+
+@case
+def login_handle_resolves_customer():
+    r = run_case([cust("CUS-000001", "Owen Park", "1971-09-09")], [acc("ACC-000001", "CUS-000001", login="opark71")], [], [],
+                 [alert("A-000001", "Owen Park", ["H-000001"], login="opark71")],
+                 [hit("H-000001", "A-000001", "Park, Owen", countries=["United Kingdom"], dobs=["1971-09-09"])])
+    x = r["H-000001"]
+    return x["customer_record_id"] == "CUS-000001" and x["decision"] == "SAME_ENTITY"
+
+
+@case
+def email_link_resolves_customer():
+    r = run_case([cust("CUS-000001", "Owen Park", "1971-09-09", email="owen.park@x.example")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Owen Park", ["H-000001"], email="owen.park@x.example")],
+                 [hit("H-000001", "A-000001", "Park, Owen", countries=["United Kingdom"], dobs=["1971-09-09"])])
+    x = r["H-000001"]
+    return x["customer_record_id"] == "CUS-000001" and x["decision"] == "SAME_ENTITY"
+
+
+@case
+def phone_and_full_dob_merges_records():
+    # same phone and the same full DOB: one person, so Kenya counts and blocks a location clearance
+    cs = [cust("CUS-000001", "Helen Grant", "1978-04-12", phone="+44 7000111222"),
+          cust("CUS-000002", "Helen Grant", "1978-04-12", nat="Kenya", res="KE", phone="+44 7000111222")]
+    r = run_case(cs, [acc("ACC-000001", "CUS-000001"), acc("ACC-000002", "CUS-000002")], [], [],
+                 [alert("A-000001", "Helen Grant", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Grant, Helen", countries=["Kenya"])])
+    return r["H-000001"]["decision"] != "DIFFERENT_ENTITY"
+
+
+@case
+def year_only_dob_plus_phone_does_not_merge():
+    # policy merges on a phone and a full date of birth; a year-only DOB is not enough
+    cs = [cust("CUS-000001", "Helen Grant", "1978-04-12", phone="+44 7000111222"),
+          cust("CUS-000002", "Helen Grant", "1978", nat="Kenya", res="KE", phone="+44 7000111222")]
+    r = run_case(cs, [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Helen Grant", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Grant, Helen", countries=["Kenya"])])
+    return r["H-000001"]["decision"] == "DIFFERENT_ENTITY" and r["H-000001"]["reason_code"] == "LOCATION_MISMATCH"
+
+
+@case
+def unresolved_customer_record_id_is_null_and_not_cleared():
+    # no record in the bank's systems; even a screened DOB that would contradict the hit cannot clear it
+    r = run_case([], [], [], [],
+                 [alert("A-000001", "Zelda Quill", ["H-000001"], dob="1991-01-01")],
+                 [hit("H-000001", "A-000001", "Quill, Zelda", countries=["United Kingdom"], dobs=["1960"])])
+    x = r["H-000001"]
+    return x["customer_record_id"] is None and x["decision"] == "REVIEW" and x["reason_code"] == "INSUFFICIENT_DATA"
+
+
+@case
+def unresolved_type_mismatch_may_clear_with_null_id():
+    # the one exception: a person vs a company can still be cleared from screened type alone
+    r = run_case([], [], [], [],
+                 [alert("A-000001", "Zelda Quill", ["H-000001"])],
+                 [hit("H-000001", "A-000001", "Zelda Quill Ltd", etype="Company", countries=["United Kingdom"])])
+    x = r["H-000001"]
+    return x["customer_record_id"] is None and x["decision"] == "DIFFERENT_ENTITY" and x["reason_code"] == "ENTITY_TYPE_MISMATCH"
+
+
+@case
+def ambiguous_same_decision_keeps_decision_and_ambiguous_id():
+    # two people fit and each would be confirmed the same way: give that decision, but customer_record_id is AMBIGUOUS
+    cs = [cust("CUS-000001", "Carla Nunez", "1982-05-05", phone="+44 1"),
+          cust("CUS-000002", "Carla Nunez", "1982-05-05", phone="+44 2")]
+    r = run_case(cs, [], [], [],
+                 [alert("A-000001", "Carla Nunez", ["H-000001"])],
+                 [hit("H-000001", "A-000001", "Nunez, Carla", countries=["United Kingdom"], dobs=["1982-05-05"])])
+    x = r["H-000001"]
+    return x["customer_record_id"] == "AMBIGUOUS" and x["decision"] == "SAME_ENTITY" and x["reason_code"] != "AMBIGUOUS_CUSTOMER_RECORD" and _code_ok(x)
+
+
+@case
+def output_reason_code_belongs_and_evidence_ids_exist():
+    known = {"CUS-000001", "ACC-000001", "APP-000001", "KYC-000001", "A-000001", "H-000001"}
+    r = run_case([cust("CUS-000001", "Fiona Ward", "1984-07-07")], [acc("ACC-000001", "CUS-000001")],
+                 [onb("ACC-000001", "CUS-000001", "APP-000001")], [kyc("KYC-000001", "APP-000001", "Fiona Ward", "1984-07-07")],
+                 [alert("A-000001", "Fiona Ward", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Ward, Fiona", countries=["United Kingdom"], dobs=["1984-07-07"])])
+    x = r["H-000001"]
+    ev_ok = all(e in known for e in x["evidence"])
+    cid_ok = x["customer_record_id"] == "CUS-000001"
+    return ev_ok and cid_ok and _code_ok(x) and x["decision"] == "SAME_ENTITY" and isinstance(x["reason"], str) and len(x["reason"]) > 0
+
+
+@case
+def company_incorporated_before_report_is_not_temporal():
+    r = run_case([cust("CUS-000001", "Northwind Trading Ltd", "2008-01-01", etype="Company")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Northwind Trading Ltd", ["H-000001"], account="ACC-000001", etype="Company")],
+                 [hit("H-000001", "A-000001", "Northwind Trading Limited", etype="Company", countries=["United Kingdom"],
+                      notes="According to fca.org.uk; March 3, 2015: Northwind Trading was fined.")])
+    return r["H-000001"]["reason_code"] != "TEMPORAL_IMPOSSIBILITY" and r["H-000001"]["decision"] == "SAME_ENTITY"
+
+
+@case
+def informal_report_wording_is_not_a_dated_report():
+    # only the "According to …; Date: …" lines count; other wordings must not create a temporal clearance
+    r = run_case([cust("CUS-000001", "Nora Blake", "2004-02-02")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Nora Blake", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Blake, Nora", countries=["United Kingdom"],
+                      notes="On June 1, 2011, Nora Blake was charged.")])
+    return r["H-000001"]["reason_code"] != "TEMPORAL_IMPOSSIBILITY" and r["H-000001"]["decision"] == "REVIEW"
+
+
+@case
+def no_dated_report_is_not_temporal():
+    r = run_case([cust("CUS-000001", "Nora Blake", "2020-02-02")], [acc("ACC-000001", "CUS-000001")], [], [],
+                 [alert("A-000001", "Nora Blake", ["H-000001"], account="ACC-000001")],
+                 [hit("H-000001", "A-000001", "Blake, Nora", countries=["United Kingdom"])])
+    return r["H-000001"]["reason_code"] != "TEMPORAL_IMPOSSIBILITY" and r["H-000001"]["decision"] == "REVIEW"
+
 
 
 if __name__ == "__main__":
