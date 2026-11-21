@@ -379,11 +379,15 @@ class Data:
             d = parse_date(c.get("dob"))
             if len(ph) >= 6 and d and d[1] and d[2]:
                 by_phone_dob[(ph, d)].append(rid)
-        for rids in by_phone_dob.values():
+        weak_pairs = []
+        for (ph, _d), rids in by_phone_dob.items():
             if len(rids) > 6:
                 continue  # a phone+DOB shared this widely is a placeholder, not one person
             for r in rids[1:]:
-                union(rids[0], r)
+                if len(set(ph[-7:])) == 1:
+                    weak_pairs.append((rids[0], r))  # placeholder-looking phone (e.g. 0000000): applied last, see below
+                else:
+                    union(rids[0], r)
         by_doc = defaultdict(set)
         for rid in self.customers:
             for app in self.app_by_cust.get(rid, ()):
@@ -398,6 +402,16 @@ class Data:
                 continue
             for r in rids[1:]:
                 union(rids[0], r)
+        # the picture without the placeholder-phone links, so a decision can be checked both ways
+        self.strong_of = {}
+        groups = defaultdict(list)
+        for rid in self.customers:
+            groups[find(rid)].append(rid)
+        for rids in groups.values():
+            for r in rids:
+                self.strong_of[r] = tuple(sorted(rids))
+        for a, b in weak_pairs:
+            union(a, b)
         self.person_of = {}
         groups = defaultdict(list)
         for rid in self.customers:
@@ -453,14 +467,21 @@ def titlecase_name(text):
 
 def _normalise_note_dates(text):
     """Bank notes write slash dates day-first. Two-digit years are expanded (yy <= 26 -> 20yy, else 19yy);
-    if the note itself shows month-first order (a middle part above 12), its slash dates are swapped."""
+    if the note itself shows month-first order (a middle part above 12), its unambiguous slash dates are read
+    month-first and the ambiguous ones keep only their year."""
     def yy(m):
         y = int(m.group(3))
         return "%s/%s/%d" % (m.group(1), m.group(2), (2000 + y) if y <= 26 else (1900 + y))
     text = re.sub(r"(?<![\d/.])(\d{1,2})[/.](\d{1,2})[/.](\d{2})(?![\d/]|\.\d)", yy, text)
     pairs = re.findall(r"(?<![\d/.])(\d{1,2})/(\d{1,2})/(\d{4})(?![\d/])", text)
     if any(int(b) > 12 and int(a) <= 12 for a, b, _ in pairs) and not any(int(a) > 12 for a, b, _ in pairs):
-        text = re.sub(r"(?<![\d/.])(\d{1,2})/(\d{1,2})/(\d{4})(?![\d/])", lambda m: "%s/%s/%s" % (m.group(2), m.group(1), m.group(3)), text)
+        # the note mixes in month-first dates: a slash date that reads both ways keeps only its year
+        def fix(m):
+            a, b = int(m.group(1)), int(m.group(2))
+            if a <= 12 and b <= 12 and a != b:
+                return m.group(3)
+            return "%s/%s/%s" % (m.group(2), m.group(1), m.group(3))
+        text = re.sub(r"(?<![\d/.])(\d{1,2})/(\d{1,2})/(\d{4})(?![\d/])", fix, text)
     return text
 
 
@@ -849,12 +870,18 @@ def join_names(xs):
 
 # ----------------------------------------------------------------------------- hit facts
 
+APPROX_RE = re.compile(r"(?i)\b(?:c\.|ca\.|circa|approx\w*|about|around|estimated|est\.)|\?|\d0'?s\b")
+
+
 def parse_dob_field(v):
     """All dates a dobs entry allows; a range like '1970-1972' or '1970 to 1972' yields every year."""
     if isinstance(v, int):
         v = str(v)
     if not isinstance(v, str):
         return []
+    m = re.fullmatch(r"\s*(1[89]\d|20\d)0'?s\s*", v)
+    if m:  # a decade, "1980s"
+        return [(int(m.group(1)) * 10 + k, None, None) for k in range(10)]
     m = re.fullmatch(r"\s*(?:c\.|ca\.|circa|approx\.?|about)?\s*(\d{4})\s*(?:-|–|to|/)\s*(\d{4})\s*", v, re.I)
     if m and int(m.group(1)) < int(m.group(2)) <= int(m.group(1)) + 15:
         return [(y, None, None) for y in range(int(m.group(1)), int(m.group(2)) + 1)]
@@ -871,6 +898,8 @@ class HitFacts:
         self.dobs = []
         self.dob_ev = []
         self.dob_text = ""
+        # an approximate DOB ("circa 1980", "about 1980", "1980?") can agree but never contradicts
+        self.dob_approx = any(isinstance(v, str) and APPROX_RE.search(v) for v in (h.get("dobs") or []))
         for v in h.get("dobs") or []:
             for d in parse_dob_field(v):
                 if d not in self.dobs:
@@ -1106,6 +1135,8 @@ def decide_person(data, alert, hf, P):
                 contras.append(("TEMPORAL_IMPOSSIBILITY", list(cdob_src),
                                 "The customer was born %s (%s), so they were at most %d when the hit's profile reports activity on %s." % (
                                     fmt_date(cdobs[0]), ", ".join(cdob_src), max(ages), fmt_date(first))))
+    if d_contra_all and hf.dob_kind == "listed" and hf.dob_approx:
+        d_contra_all = False
     if d_contra_all:
         contras.append(("DOB_MISMATCH", dob_ev, "The customer's %s is %s (%s) but %s." % (
             "incorporation date" if cust_company else "date of birth", " or ".join(fmt_date(d) for d in cdobs), ", ".join(cdob_src) or "screened details",
@@ -1220,6 +1251,24 @@ def finish(contras, agree, P, hf):
     return {"decision": "REVIEW", "code": "INSUFFICIENT_DATA", "codes": ["INSUFFICIENT_DATA"], "ev": ev, "sent": sents}
 
 
+def decide_robust(data, alert, hf, P, anchor, cache):
+    """Policy merges records on phone + full DOB. When that phone is a placeholder (e.g. 0000000), the merge may
+    join two different people: decide with and without it, and if the answers differ a person decides."""
+    r = decide_person(data, alert, hf, P)
+    strong = data.strong_of.get(anchor)
+    if not strong or list(strong) == list(P.rids):
+        return r
+    if strong not in cache:
+        cache[strong] = Person(data, strong)
+    r2 = decide_person(data, alert, hf, cache[strong])
+    if r2["decision"] == r["decision"]:
+        return r
+    return {"decision": "REVIEW", "code": "INSUFFICIENT_DATA", "codes": ["INSUFFICIENT_DATA"], "ev": sorted(set(P.rids)),
+            "sent": ["Records %s are joined to %s only by a placeholder-looking phone number with the same date of birth." % (
+                ", ".join(x for x in P.rids if x not in strong), ", ".join(strong)),
+                     "With that link the hit would be %s, without it %s, so a person decides." % (r["decision"], r2["decision"])]}
+
+
 # ----------------------------------------------------------------------------- main
 
 def run(folder, out_path):
@@ -1251,12 +1300,11 @@ def run(folder, out_path):
                          "sent": ["No customer record could be resolved for this alert; the screened details agree with the hit but are unverified."]}
                 cid = None
             elif len(Ps) == 1:
-                r = decide_person(data, alert, hf, Ps[0])
-                cid = Ps[0].rids[0]
                 # prefer the record the link pointed to
                 cid = pick_record(data, alert, Ps[0])
+                r = decide_robust(data, alert, hf, Ps[0], cid, person_cache)
             else:
-                rs = [decide_person(data, alert, hf, P) for P in Ps]
+                rs = [decide_robust(data, alert, hf, P, P.rids[0], person_cache) for P in Ps]
                 decs = {x["decision"] for x in rs}
                 cid = "AMBIGUOUS"
                 allrec = sorted({rid for P in Ps for rid in P.rids})
