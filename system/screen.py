@@ -1065,6 +1065,26 @@ def resolve(data, alert):
 
 # ----------------------------------------------------------------------------- decide one (person, hit)
 
+TRACE = None  # set to a dict while tracing (SCREEN_TRACE=<file>)
+
+
+def trace_record(alert, hf, Ps, path, r, cid, cmp):
+    """What the engine compared for one hit, for the demo viewer (written only with SCREEN_TRACE)."""
+    people = []
+    for P in Ps:
+        people.append({"rids": list(P.rids),
+                       "checks": [{"id": c["id"], "src": c["src"], "approved": bool(c["approved"]), "date": fmt_date(c["date"]) if c.get("date") else None,
+                                   "name": c.get("name"), "dob": fmt_date(c["dob"]) if c.get("dob") else None, "country": c.get("country")}
+                                  for c in sorted(P.checks, key=lambda c: (date_key(c.get("date")), c["id"]))],
+                       "latest": (P.latest or {}).get("id"), "notes": [n["note_id"] for n in P.notes]})
+    return {"hit_id": hf.h["hit_id"], "alert_id": alert["alert_id"], "path": list(path), "people": people, "customer_record_id": cid,
+            "hit": {"names": list(hf.names), "company": hf.company, "dobs": [fmt_date(d) for d in hf.dobs], "dob_kind": hf.dob_kind,
+                    "dob_ev": list(hf.dob_ev), "countries": list(hf.countries), "unknown_countries": list(hf.unknown_countries),
+                    "reports": [fmt_date(d) for d in hf.reports], "deceased": fmt_date(hf.deceased) if hf.deceased else None,
+                    "field_dobs": [fmt_date(d) for d in getattr(hf, "field_dobs", [])]},
+            "cmp": cmp, "decision": r["decision"], "code": r["code"], "codes": r.get("codes"), "evidence": r["ev"]}
+
+
 def decide_person(data, alert, hf, P):
     """Return dict(decision, code, ev, reason_sentences, codes_all)."""
     nm = data.nm
@@ -1169,6 +1189,13 @@ def decide_person(data, alert, hf, P):
 
     agree_info = {"name": best_name_agree if name_agree else None, "dob": d_agree, "shared": shared,
                   "dob_ev": dob_ev, "cctry": cctry}
+    if TRACE is not None:  # side record for the demo viewer only; never affects the decision
+        TRACE["cmp"] = {"name_pair": list(best_name_agree) if best_name_agree else None, "name_agree": bool(name_agree),
+                        "name_parts_ok": bool(name_ok_parts), "dob_pair": [fmt_date(x) for x in d_agree] if d_agree else None,
+                        "dob_contradicted": bool(d_contra_all), "cust_dobs": [fmt_date(d) for d in cdobs], "cust_dob_src": list(cdob_src),
+                        "shared": list(shared), "cust_countries": {c: sorted(v) for c, v in sorted(cctry.items())},
+                        "unknown_countries": list(unknown_loc), "contradictions": [c[0] for c in contras],
+                        "verified_name": vname, "verified_src": (P.latest or {}).get("id") if P else None}
     if name_agree and d_agree and cctry and hf.countries and not shared:
         # principle 6: a country difference does not clear a name+DOB match, but it does stop a confirmation
         agree_info["conflict"] = True
@@ -1258,9 +1285,13 @@ def decide_robust(data, alert, hf, P, anchor, cache):
     strong = data.strong_of.get(anchor)
     if not strong or list(strong) == list(P.rids):
         return r
+    saved = dict(TRACE) if TRACE is not None else None
     if strong not in cache:
         cache[strong] = Person(data, strong)
     r2 = decide_person(data, alert, hf, cache[strong])
+    if saved is not None:
+        TRACE.clear()
+        TRACE.update(saved)
     if r2["decision"] == r["decision"]:
         return r
     return {"decision": "REVIEW", "code": "INSUFFICIENT_DATA", "codes": ["INSUFFICIENT_DATA"], "ev": sorted(set(P.rids)),
@@ -1272,6 +1303,10 @@ def decide_robust(data, alert, hf, P, anchor, cache):
 # ----------------------------------------------------------------------------- main
 
 def run(folder, out_path):
+    global TRACE
+    trace_path = os.environ.get("SCREEN_TRACE")
+    TRACE = {} if trace_path else None
+    trace_rows = [] if trace_path else None
     data = Data(folder)
     rows = []
     person_cache = {}
@@ -1288,6 +1323,8 @@ def run(folder, out_path):
             if not h:
                 continue
             hf = HitFacts(data, h)
+            if TRACE is not None:
+                TRACE.clear()
             if not Ps:
                 r = decide_person(data, alert, hf, None)
                 # without a resolved customer, never clear on declared screened details alone except type
@@ -1319,6 +1356,8 @@ def run(folder, out_path):
                                   "They lead to different decisions on this hit (%s), so a person must decide." % ", ".join(
                                       "%s: %s" % (P.rids[0], x["decision"]) for P, x in zip(Ps, rs))]}
             reason = " ".join(r["sent"][:4]) if r["sent"] else "No decisive facts."
+            if trace_rows is not None:
+                trace_rows.append(trace_record(alert, hf, Ps, path, r, cid, dict(TRACE.get("cmp") or {})))
             rows.append({"hit_id": hid, "alert_id": alert["alert_id"], "decision": r["decision"], "reason_code": r["code"],
                          "customer_record_id": cid, "reason": reason, "evidence": r["ev"]})
             if os.environ.get("SCREEN_DEBUG"):
@@ -1331,6 +1370,11 @@ def run(folder, out_path):
             if not os.environ.get("SCREEN_DEBUG"):
                 r = {k: v for k, v in r.items() if not k.startswith("_")}
             fh.write(json.dumps(r, ensure_ascii=False, sort_keys=False) + "\n")
+    if trace_rows is not None:
+        trace_rows.sort(key=lambda x: (x["alert_id"], x["hit_id"]))
+        with open(trace_path, "w", encoding="utf-8") as fh:
+            for t in trace_rows:
+                fh.write(json.dumps(t, ensure_ascii=False, sort_keys=True) + "\n")
     return rows
 
 
